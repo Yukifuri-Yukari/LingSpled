@@ -1,0 +1,624 @@
+// LingSpled 全语法测试
+
+// ═══════════════════════════════════════════════════════
+// 辅助类与函数（先声明, main 调用）
+// ═══════════════════════════════════════════════════════
+
+// ── 类: 主构造函数 val/var 参数 + 默认值 ──────────────
+class Point(val x: Int, val y: Int) {
+    override fun toString(): String {
+        return "Point(" + x + ", " + y + ")"
+    }
+
+    fun distSq(): Int {
+        return x * x + y * y
+    }
+
+    fun translate(dx: Int, dy: Int): Point {
+        return Point(x + dx, y + dy)
+    }
+}
+
+// ── 类: 构造参数默认值 ────────────────────────────────
+class Counter(var count: Int = 0) {
+    fun increment() {
+        count += 1
+    }
+
+    fun add(n: Int) {
+        count += n
+    }
+
+    fun reset() {
+        count = 0
+    }
+
+    override fun toString(): String {
+        return "Counter(" + count + ")"
+    }
+}
+
+// ── 类: 类体字段 + 次级构造函数 + this ────────────────
+class Box {
+    var width: Int = 0
+    var height: Int = 0
+
+    constructor(w: Int, h: Int) {
+        this.width = w
+        this.height = h
+    }
+
+    fun area(): Int {
+        return width * height
+    }
+
+    fun describe(): String {
+        return "Box(" + width + "x" + height + ", area=" + area() + ")"
+    }
+
+    override fun toString(): String {
+        return describe()
+    }
+}
+
+// ── 类: 静态方法 ──────────────────────────────────────
+class MathUtils {
+    static fun max(a: Int, b: Int): Int {
+        if (a > b) return a
+        return b
+    }
+
+    static fun clamp(v: Int, lo: Int, hi: Int): Int {
+        if (v < lo) return lo
+        if (v > hi) return hi
+        return v
+    }
+
+    static fun factorial(n: Int): Int {
+        if (n <= 1) return 1
+        return n * MathUtils.factorial(n - 1)
+    }
+}
+
+// ── 函数: 算术与运算符 ────────────────────────────────
+fun arithmetic(): Int {
+    val a = 10
+    val b = 3
+    val add = a + b
+    val sub = a - b
+    val mul = a * b
+    val div = a / b
+    val mod = a % b
+    println("算术: " + a + "+" + b + "=" + add + " " + a + "-" + b + "=" + sub + " " + a + "*" + b + "=" + mul + " " + a + "/" + b + "=" + div + " " + a + "%" + b + "=" + mod)
+    return add
+}
+
+// ── 函数: 比较与逻辑运算符 ───────────────────────────
+fun comparisons() {
+    val x = 5
+    println("比较: 5>3=" + (x > 3) + " 5<3=" + (x < 3) + " 5>=5=" + (x >= 5) + " 5<=4=" + (x <= 4) + " 5==5=" + (x == 5) + " 5!=5=" + (x != 5))
+    println("逻辑: T&&F=" + (true && false) + " T||F=" + (true || false) + " !T=" + !true)
+}
+
+// ── 函数: 位运算 ─────────────────────────────────────
+fun bitwise() {
+    val a = 5
+    val b = 3
+    println("位运算: 5&3=" + (a & b) + " 5|3=" + (a | b) + " 5^3=" + (a ^ b) + " ~5=" + ~a + " 2<<3=" + (2 << 3) + " 16>>2=" + (16 >> 2))
+}
+
+// ── 函数: 字符串操作 ──────────────────────────────────
+fun strings() {
+    val s = "Hello"
+    val t = "World"
+    println("拼接: " + s + ", " + t + "!")
+    println("重复: " + s * 3)
+    println("数字转字符串: " + 42 + " " + 3.14)
+    val multiline = """多行
+字符串
+测试"""
+    println("多行字符串: " + multiline)
+}
+
+// ── 函数: 一元运算符 ──────────────────────────────────
+fun unary() {
+    var n = 7
+    println("一元负: " + -n)
+    println("逻辑非: " + !false)
+    println("位非: " + ~0)
+    println("后缀++（新值）: " + n++)
+    println("n 未变: " + n)
+}
+
+// ── 函数: 赋值运算符 ──────────────────────────────────
+fun assignOps() {
+    var v = 10
+    v += 5; println("+=: " + v)
+    v -= 3; println("-=: " + v)
+    v *= 2; println("*=: " + v)
+    v /= 4; println("/=: " + v)
+    v %= 5; println("%=: " + v)
+    var bits = 0xFF
+    bits &= 0x0F; println("&=: " + bits)
+    bits |= 0x30; println("|=: " + bits)
+    bits ^= 0x05; println("^=: " + bits)
+}
+
+// ── 函数: if/else 语句与 if 表达式 ───────────────────
+fun conditionals() {
+    val x = 42
+
+    // 普通 if/else
+    if (x > 0) {
+        println("正数")
+    } else if (x < 0) {
+        println("负数")
+    } else {
+        println("零")
+    }
+
+    // 单语句（无花括号）
+    if (x == 42) println("是42") else println("不是42")
+
+    // if 作为表达式
+    val sign = if (x > 0) "正" else "非正"
+    println("符号: " + sign)
+
+    // 嵌套 if
+    val grade = 85
+    val level = if (grade >= 90) "优" else if (grade >= 75) "良" else "一般"
+    println("成绩等级: " + level)
+}
+
+// ── 函数: for 循环 + break/continue ──────────────────
+fun loops() {
+    // 基本 for
+    print("for 0..4: ")
+    for (var i = 0; i < 5; i += 1) {
+        print(i + " ")
+    }
+    println("")
+
+    // continue: 跳过偶数
+    print("奇数: ")
+    for (var i = 0; i < 10; i += 1) {
+        if (i % 2 == 0) continue
+        print(i + " ")
+    }
+    println("")
+
+    // break: 遇到 7 停止
+    print("break at 7: ")
+    for (var i = 0; i < 20; i += 1) {
+        if (i == 7) break
+        print(i + " ")
+    }
+    println("")
+
+    // while 循环
+    var n = 5
+    print("while 倒数: ")
+    while (n > 0) {
+        print(n + " ")
+        n -= 1
+    }
+    println("")
+
+    // while + break
+    var k = 0
+    while (true) {
+        k += 1
+        if (k >= 4) break
+    }
+    println("while break 后 k=" + k)
+}
+
+// ── 函数: return 提前返回 ─────────────────────────────
+fun sign(x: Int): String {
+    if (x > 0) return "正"
+    if (x < 0) return "负"
+    return "零"
+}
+
+// ── 函数: 递归 ────────────────────────────────────────
+fun fib(n: Int): Int {
+    if (n <= 1) return n
+    return fib(n - 1) + fib(n - 2)
+}
+
+// ── 函数: 内置类型转换 ────────────────────────────────
+fun builtins() {
+    val i = toInt(3.9)
+    val d = toDecimal(7)
+    val s = toString(i)
+    println("toInt(3.9)=" + i + " toDecimal(7)=" + d + " toString(toInt(3.9))=" + s)
+    print("print 不换行: ")
+    print("A")
+    print("B")
+    print("C")
+    println("")
+    println("println 多参数:", "分隔", "输出")
+}
+
+// ── 函数: 运算符优先级 ────────────────────────────────
+fun precedence() {
+    // 2 + 3 * 4 = 14（乘优先）
+    println("2+3*4=" + (2 + 3 * 4))
+    // (2 + 3) * 4 = 20
+    println("(2+3)*4=" + ((2 + 3) * 4))
+    // 1 + 2 == 3 → true
+    println("1+2==3: " + (1 + 2 == 3))
+    // !false && true → true
+    println("!false&&true: " + (!false && true))
+    // 短路: false && (... 不执行 ...)
+    val sc = false && (1 / 0 == 0)
+    println("短路&&: " + sc)
+}
+
+// ── 函数: defer 综合 ──────────────────────────────────
+fun deferBasic() {
+    defer println("  defer 3（最后）")
+    defer println("  defer 2（中间）")
+    defer println("  defer 1（最先）")
+    println("  函数体")
+}
+
+fun deferWithReturn(): String {
+    defer println("  [defer 在 return 后执行]")
+    println("  即将 return")
+    return "defer+return OK"
+}
+
+fun deferNested() {
+    defer println("  outer defer")
+    println("  outer 前")
+    deferBasicInner()
+    println("  outer 后")
+}
+
+fun deferBasicInner() {
+    defer println("    inner defer")
+    println("    inner 体")
+}
+
+// ── 函数: 数组综合 ────────────────────────────────────
+fun arrays() {
+    // arrayOf 创建
+    val a = arrayOf(1, 2, 3, 4, 5)
+    println("arrayOf: " + a)
+    println("size: " + a.size)
+
+    // Array(n) 创建后赋值
+    val b = Array(3)
+    b[0] = "x"
+    b[1] = "y"
+    b[2] = "z"
+    println("Array(3) 赋值后: " + b)
+
+    // 索引读写
+    println("a[0]=" + a[0] + " a[4]=" + a[4])
+    val c = arrayOf(10, 20, 30)
+    c[1] = 99
+    println("c[1]=99 后: " + c)
+
+    // contains / isEmpty
+    println("contains 3: " + a.contains(3))
+    println("contains 9: " + a.contains(9))
+    println("isEmpty: " + a.isEmpty())
+
+    // 遍历
+    print("遍历 a: ")
+    for (var i = 0; i < a.size; i += 1) {
+        print(a[i] + " ")
+    }
+    println("")
+
+    // 累加
+    var sum = 0
+    for (var i = 0; i < a.size; i += 1) {
+        sum += a[i]
+    }
+    println("sum(1..5)=" + sum)
+}
+
+// ── 泛型类 + 泛型函数 ────────────────────────────────
+class Pair<A, B>(val first: A, val second: B) {
+    fun swap(): Pair<B, A> {
+        return Pair(second, first)
+    }
+
+    override fun toString(): String {
+        return "(" + first + ", " + second + ")"
+    }
+}
+
+class Box2<T>(val item: T) {
+    fun map(f: (T) -> T): Box2<T> {    // takes a lambda T -> T
+        return Box2(f(item))
+    }
+
+    override fun toString(): String {
+        return "Box2[" + item + "]"
+    }
+}
+
+fun<T> identity(x: T): T {
+    return x
+}
+
+fun<A, B> swap(pair: Pair<A, B>): Pair<B, A> {
+    return pair.swap()
+}
+
+// 泛型约束占位（Walker 运行时擦除，约束由 TypeInferrer 检查）
+fun<T> firstOf(a: T, b: T): T {
+    return a
+}
+
+// ── interface: 抽象方法 + default 方法 + private 字段 ─
+interface Drawable {
+    private val tag: String = "drawable"
+
+    abstract fun draw()                                    // abstract
+
+    fun describe(): String {                      // default
+        return "【" + tag + "】"
+    }
+}
+
+interface Resizable {
+    fun resize(factor: Int)                       // abstract
+    fun info(): String { return "resizable" }    // default
+}
+
+// 实现单接口
+class Circle(val radius: Int) : Drawable {
+    override fun draw() {
+        println("○ 半径=" + radius)
+    }
+
+    override fun toString(): String {
+        return "Circle(r=" + radius + ")"
+    }
+}
+
+// 实现多接口，覆盖 default 方法
+class Rect(val w: Int, val h: Int) : Drawable, Resizable {
+    override fun draw() {
+        println("□ " + w + "×" + h)
+    }
+
+    override fun resize(factor: Int) {
+        println("Rect 缩放 ×" + factor)
+    }
+
+    override fun describe(): String {            // 覆盖 Drawable 的 default
+        return "Rect(" + w + "," + h + ")"
+    }
+}
+
+// 使用 default method、不覆盖
+class Triangle(val base: Int, val height: Int) : Drawable, Resizable {
+    override fun draw() {
+        println("△ 底=" + base + " 高=" + height)
+    }
+
+    override fun resize(factor: Int) {
+        println("Triangle 缩放 ×" + factor)
+    }
+}
+
+// ── 类: 可空链表节点（用于 null / ?. / !! 测试）────────
+class Node(val value: Int) {
+    var next: Node = null
+}
+
+// ── 函数: null 字面量 / ?. 安全访问 / !! 非空断言 ───────
+fun nullTests() {
+    // null 字面量 & == 比较
+    val absent: Node = null
+    println("null 字面量: " + absent)
+    println("absent == null: " + (absent == null))
+
+    // ?. 安全字段访问 — receiver 为 null → 返回 null
+    println("absent?.value = " + absent?.value)
+
+    // ?. 安全字段访问 — receiver 非 null → 正常取值
+    val node = Node(42)
+    println("node?.value = " + node?.value)
+
+    // !! 非空断言 — 非 null 正常通过
+    val v = node!!.value
+    println("node!!.value = " + v)
+
+    // 链式 ?. — 中间非 null
+    val head = Node(1)
+    head.next = Node(2)
+    println("head?.next?.value = " + head?.next?.value)
+
+    // 链式 ?. — 链首为 null，短路返回 null
+    val empty: Node = null
+    println("empty?.next?.value = " + empty?.next?.value)
+
+    // ?. 安全方法调用 — receiver 为 null → null
+    println("absent?.toString() = " + absent?.toString())
+
+    // ?. 安全方法调用 — receiver 非 null → 正常调用
+    println("node?.toString() = " + node?.toString())
+}
+
+// ══════════════════════════════════════════════════════
+fun main() {
+    // ─── 1. 字面量 ───────────────────────────────────
+    println("=== 1. 字面量 ===")
+    println(42)
+    println(0b1010)
+    println(0xFF)
+    println(3.14)
+    println("字符串")
+    println(true)
+    println(false)
+
+    // ─── 2. 变量 ──────────────────────────────────────
+    println("=== 2. 变量 ===")
+    val 整数: Int = 100
+    var 小数 = 2.718
+    val 布尔 = true
+    println(整数)
+    println(小数)
+    小数 = 3.0
+    println(小数)
+    println(布尔)
+
+    // ─── 3. 算术运算符 ────────────────────────────────
+    println("=== 3. 算术 ===")
+    arithmetic()
+
+    // ─── 4. 比较 & 逻辑运算符 ─────────────────────────
+    println("=== 4. 比较 & 逻辑 ===")
+    comparisons()
+
+    // ─── 5. 位运算符 ──────────────────────────────────
+    println("=== 5. 位运算 ===")
+    bitwise()
+
+    // ─── 6. 字符串操作 ────────────────────────────────
+    println("=== 6. 字符串 ===")
+    strings()
+
+    // ─── 7. 一元运算符 ────────────────────────────────
+    println("=== 7. 一元运算符 ===")
+    unary()
+
+    // ─── 8. 赋值运算符 ────────────────────────────────
+    println("=== 8. 赋值运算符 ===")
+    assignOps()
+
+    // ─── 9. if / else ─────────────────────────────────
+    println("=== 9. if/else ===")
+    conditionals()
+
+    // ─── 10. 循环 + break / continue ─────────────────
+    println("=== 10. 循环 ===")
+    loops()
+
+    // ─── 11. return ───────────────────────────────────
+    println("=== 11. return ===")
+    println("sign(-5)=" + sign(-5))
+    println("sign(0)=" + sign(0))
+    println("sign(3)=" + sign(3))
+
+    // ─── 12. 递归 ─────────────────────────────────────
+    println("=== 12. 递归 ===")
+    print("fib(0..7): ")
+    for (var i = 0; i < 8; i += 1) {
+        print(fib(i) + " ")
+    }
+    println("")
+
+    // ─── 13. 类: 主构造函数 ───────────────────────────
+    println("=== 13. 类 - 主构造函数 ===")
+    val p = Point(3, 4)
+    println(p)
+    println("distSq=" + p.distSq())
+    val p2 = p.translate(1, -1)
+    println("translate(1,-1)=" + p2)
+    println("x=" + p.x + " y=" + p.y)
+
+    // ─── 14. 类: 默认参数 ─────────────────────────────
+    println("=== 14. 类 - 默认参数 ===")
+    val c = Counter()
+    c.increment()
+    c.increment()
+    c.add(8)
+    println(c)
+    c.reset()
+    println("reset 后: " + c)
+
+    // ─── 15. 类: 次级构造函数 + 字段赋值 + this ───────
+    println("=== 15. 类 - 次级构造函数 ===")
+    val b = Box(6, 4)
+    println(b)
+    b.width = 10
+    println("width 改为 10 后: " + b.describe())
+
+    // ─── 16. 静态方法 ─────────────────────────────────
+    println("=== 16. 静态方法 ===")
+    println("max(7,3)=" + MathUtils.max(7, 3))
+    println("clamp(15,0,10)=" + MathUtils.clamp(15, 0, 10))
+    println("5!=" + MathUtils.factorial(5))
+
+    // ─── 17. 内置函数 ─────────────────────────────────
+    println("=== 17. 内置函数 ===")
+    builtins()
+
+    // ─── 18. 运算符优先级 ─────────────────────────────
+    println("=== 18. 运算符优先级 ===")
+    precedence()
+
+    // ─── 19. defer ────────────────────────────────────
+    println("=== 19. defer ===")
+    println("-- deferBasic --")
+    deferBasic()
+    println("-- defer + return --")
+    println(deferWithReturn())
+    println("-- defer 嵌套帧 --")
+    deferNested()
+
+    // ─── 20. 数组 ──────────────────────────────────────
+    println("=== 20. 数组 ===")
+    arrays()
+
+    // ─── 21. 泛型 ─────────────────────────────────────
+    println("=== 21. 泛型 ===")
+
+    // 泛型类：不同类型参数组合
+    val pi = Pair<Int, String>(42, "hello")
+    println(pi)
+    println("first=" + pi.first + " second=" + pi.second)
+
+    val ps = pi.swap()
+    println("swap=" + ps)
+
+    val pb = Pair<Boolean, Int>(true, 0)
+    println(pb)
+
+    // 泛型类 + lambda 参数
+    val box = Box2<Int>(10)
+    println(box)
+    val box2 = box.map({ x -> x * 3 })
+    println("map(*3)=" + box2)
+
+    // 泛型函数
+    println("identity(99)=" + identity(99))
+    println("identity(\"ling\")=" + identity("ling"))
+
+    val pair2 = Pair<String, Int>("abc", 7)
+    println("swap(pair2)=" + swap(pair2))
+
+    println("firstOf(1,2)=" + firstOf(1, 2))
+    println("firstOf(\"a\",\"b\")=" + firstOf("a", "b"))
+
+    // ─── 22. interface ────────────────────────────────
+    println("=== 22. interface ===")
+
+
+    val c1 = Circle(5)
+    c1.draw()                                    // 实现的抽象方法
+    println(c1.describe())                       // 继承的 default 方法
+
+    val r1 = Rect(4, 3)
+    r1.draw()
+    r1.resize(2)
+    println(r1.describe())                       // 覆盖的 default 方法
+
+    val t1 = Triangle(6, 4)
+    t1.draw()
+    t1.resize(3)
+    println(t1.describe())                       // 未覆盖，走 Drawable default
+    println(t1.info())                           // 未覆盖，走 Resizable default
+
+    // ─── 23. null / ?. / !! ──────────────────────────
+    println("=== 23. null / ?. / !! ===")
+    nullTests()
+}

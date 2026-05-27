@@ -1,0 +1,10 @@
+package a.b
+
+class C
+class D
+
+val b = { { D() }() }
+
+fun a() {}
+
+fun <T> wrapper(a: T): T { return a }

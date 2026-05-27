@@ -1,0 +1,8 @@
+package sqrt.second
+
+import a.b.a
+
+fun main(args: Array<String>) {
+    a()
+    val a = wrapper(111)
+}
