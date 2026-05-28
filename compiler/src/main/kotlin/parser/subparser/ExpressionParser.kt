@@ -1,29 +1,17 @@
 package yukifuri.lang.lingspled.compiler.parser.subparser
 
-import yukifuri.lang.lingspled.compiler.ast.expr.BinaryExpr
-import yukifuri.lang.lingspled.compiler.ast.expr.FieldAccess
-import yukifuri.lang.lingspled.compiler.ast.expr.IndexAccess
-import yukifuri.lang.lingspled.compiler.ast.expr.InvokeExpr
-import yukifuri.lang.lingspled.compiler.ast.expr.MethodCall
-import yukifuri.lang.lingspled.compiler.ast.expr.ThisExpr
+import yukifuri.lang.lingspled.compiler.ast.base.Argument
 import yukifuri.lang.lingspled.compiler.ast.base.Expression
-import yukifuri.lang.lingspled.compiler.ast.base.Statement
 import yukifuri.lang.lingspled.compiler.ast.conditional.If
 import yukifuri.lang.lingspled.compiler.ast.conditional.When
-import yukifuri.lang.lingspled.compiler.ast.expr.AsExpr
-import yukifuri.lang.lingspled.compiler.ast.expr.UnaryExpr
-import yukifuri.lang.lingspled.compiler.ast.literal.BooleanLiteral
-import yukifuri.lang.lingspled.compiler.ast.variable.VariableGet
-import yukifuri.lang.lingspled.compiler.ast.literal.DecimalLiteral
-import yukifuri.lang.lingspled.compiler.ast.literal.IntegerLiteral
-import yukifuri.lang.lingspled.compiler.ast.literal.Literal
-import yukifuri.lang.lingspled.compiler.ast.literal.NullLiteral
-import yukifuri.lang.lingspled.compiler.ast.literal.StringLiteral
-import yukifuri.lang.lingspled.compiler.ast.base.Argument
+import yukifuri.lang.lingspled.compiler.ast.expr.*
+import yukifuri.lang.lingspled.compiler.ast.function.LFunctionCall
 import yukifuri.lang.lingspled.compiler.ast.function.LambdaExpr
+import yukifuri.lang.lingspled.compiler.ast.literal.*
 import yukifuri.lang.lingspled.compiler.ast.module.Module
 import yukifuri.lang.lingspled.compiler.ast.type.LType
 import yukifuri.lang.lingspled.compiler.ast.util.Operator
+import yukifuri.lang.lingspled.compiler.ast.variable.VariableGet
 import yukifuri.lang.lingspled.compiler.lexer.Lexer
 import yukifuri.lang.lingspled.compiler.lexer.token.Token
 import yukifuri.lang.lingspled.compiler.lexer.token.TokenType
@@ -39,202 +27,274 @@ class ExpressionParser(parent: Parser) : SubParser(parent) {
             TokenType.Decimal,
             TokenType.BooleanLiteral
         )
+
+        fun binaryLbp(op: Operator) = 20 - op.priority
+
+        // 后缀/导航操作符（.  ?.  !!  ()  []  as  ++后缀  --后缀）的左绑定力，
+        // 高于所有二元操作符（最高 lbp 为 18），保证后缀链先于二元操作被消费。
+        private const val POSTFIX_LBP = 100
+
+        // 一元前缀的右绑定力。
+        //   > 乘法 lbp(18)：-a * b  →  (-a) * b
+        //   < 后缀 lbp(100)：-a.b  →  -(a.b)
+        private const val UNARY_RBP = 19
     }
 
-    fun parse(minPriority: Int = Int.MAX_VALUE): Expression {
-        var left = primary()
-
-        while (hasNext()) {
-            val opToken = peek()
-
-            // !is / !in: two-token compound operators (Operator '!' + Keyword 'is'/'in')
-            if (opToken.type == TokenType.Operator && opToken.text == "!") {
-                val snap = parent.ts.snapshot()
-                next() // tentatively consume '!'
-                val compoundOp = if (hasNext() && peek().type == TokenType.Keyword) {
-                    when (peek().text) {
-                        "is" -> Operator.NotIs
-                        "in" -> Operator.NotIn
-                        else -> null
-                    }
-                } else null
-                if (compoundOp != null && compoundOp.priority < minPriority) {
-                    next() // consume 'is' or 'in'
-                    val right = if (compoundOp == Operator.NotIs) {
-                        val typeTok = next(TokenType.Identifier)
-                        VariableGet(typeTok.text).also { it.at(typeTok.row, typeTok.col) }
-                    } else {
-                        parse(compoundOp.priority)
-                    }
-                    left = BinaryExpr(left, compoundOp, right).also { it.at(opToken.row, opToken.col) }
-                    continue
-                }
-                parent.ts.restore(snap)
-                break
-            }
-
-            // ?: Elvis operator (two-token: Question + Colon)
-            if (opToken.type == TokenType.Question) {
-                val snap = parent.ts.snapshot()
-                next() // tentatively consume '?'
-                if (hasNext() && peek().type == TokenType.Colon && Operator.Elvis.priority < minPriority) {
-                    next() // consume ':'
-                    val right = parse(Operator.Elvis.priority)
-                    left = BinaryExpr(left, Operator.Elvis, right).also { it.at(opToken.row, opToken.col) }
-                    continue
-                }
-                parent.ts.restore(snap)
-                break
-            }
-
-            // Standard single-token binary operators
-            val operator = Operator.fromSymbol(opToken.text) ?: break
-            val priority = operator.priority
-            if (opToken.type != TokenType.Operator && opToken.type != TokenType.Keyword) break
-            if (priority >= minPriority) break
-
-            next() // consume operator
-            val right = if (operator == Operator.Is) {
-                // right-hand side of 'is' is a type name, not a value expression
-                val typeTok = next(TokenType.Identifier)
-                VariableGet(typeTok.text).also { it.at(typeTok.row, typeTok.col) }
-            } else {
-                parse(priority)
-            }
-            left = BinaryExpr(left, operator, right).also { it.at(opToken.row, opToken.col) }
+    fun parse(rbp: Int = 0): Expression {
+        skipWs()
+        var left = nud(next())
+        while (hasNext() && lbp() > rbp) {
+            left = led(next(), left)
         }
-
         return left
     }
 
-    fun primary(): Expression {
-        var expr = primaryAtom()
-        while (hasNext()) {
-            expr = when (peek().type) {
-                TokenType.Dot -> {
-                    next() // consume '.'
-                    val memberTok = next(TokenType.Identifier)
-                    val typeArgs = parent.parseTypeArgs()
-                    if (hasNext() && peek().type == TokenType.LParen) {
-                        next() // consume '('
-                        MethodCall(expr, memberTok.text, parent.parseList { parent.expr.parse() }, typeArgs).also { it.at(memberTok.row, memberTok.col) }
-                    } else
-                        FieldAccess(expr, memberTok.text).also { it.at(memberTok.row, memberTok.col) }
-                }
-                TokenType.Question -> {
-                    val snap = parent.ts.snapshot()
-                    next() // tentatively consume '?'
-                    if (hasNext() && peek().type == TokenType.Dot) {
-                        next() // consume '.'
-                        val memberTok = next(TokenType.Identifier)
-                        val typeArgs = parent.parseTypeArgs()
-                        if (hasNext() && peek().type == TokenType.LParen) {
-                            next() // consume '('
-                            MethodCall(expr, memberTok.text, parent.parseList { parent.expr.parse() }, typeArgs, safe = true).also { it.at(memberTok.row, memberTok.col) }
-                        } else
-                            FieldAccess(expr, memberTok.text, safe = true).also { it.at(memberTok.row, memberTok.col) }
-                    } else {
-                        parent.ts.restore(snap)
-                        break
-                    }
-                }
-                TokenType.Operator if peek().text == "!!" -> {
-                    val bangTok = next()
-                    UnaryExpr(Operator.NotNull, expr).also { it.at(bangTok.row, bangTok.col) }
-                }
-                TokenType.LParen -> {
-                    val lparenTok = next() // consume '('
-                    InvokeExpr(expr, parent.parseList { parent.expr.parse() }).also { it.at(lparenTok.row, lparenTok.col) }
-                }
-                TokenType.LBracket -> {
-                    val lbracketTok = next() // consume '['
-                    val index = parse()
-                    next(TokenType.RBracket)
-                    IndexAccess(expr, index).also { it.at(lbracketTok.row, lbracketTok.col) }
-                }
-                TokenType.Keyword if peek().text == "as" -> {
-                    val asTok = next()
-                    val targetType = parent.parseType()
-                    AsExpr(expr, targetType).also { it.at(asTok.row, asTok.col) }
-                }
-                else -> break
+    private fun lbp(): Int {
+        if (!hasNext()) return 0
+        val tok = peek()
+        return when (tok.type) {
+            TokenType.Dot -> POSTFIX_LBP
+            TokenType.LParen -> POSTFIX_LBP   // 调用 expr(...)
+            TokenType.LBracket -> POSTFIX_LBP   // 索引 expr[i]
+            TokenType.Keyword -> when (tok.text) {
+                "as" -> POSTFIX_LBP                  // 类型转换（后缀）
+                "is" -> binaryLbp(Operator.Is)       // priority 6 → lbp 14
+                "in" -> binaryLbp(Operator.In)       // priority 6 → lbp 14
+                else -> 0
             }
+
+            TokenType.Question -> questionLbp()
+            TokenType.Operator -> when (tok.text) {
+                "!!" -> POSTFIX_LBP                  // 非空断言（后缀）
+                "++" -> POSTFIX_LBP                  // 后缀自增
+                "--" -> POSTFIX_LBP                  // 后缀自减
+                // '!' 在中缀位置仅当紧跟 'is'/'in' 时有效（!is / !in）
+                "!" -> bangLbp()
+                else -> {
+                    val op = Operator.fromSymbol(tok.text) ?: return 0
+                    // Not / BitNot 为纯前缀，在中缀位置无绑定力
+                    if (op == Operator.Not || op == Operator.BitNot) 0
+                    else binaryLbp(op)
+                }
+            }
+
+            else -> 0
         }
-        return expr
     }
 
-    private fun primaryAtom(): Expression {
-        skipWs()
-        val t = peek()
-        return when (t.type) {
-            in literals -> parseLiteral()
-            // UnaryExpr(Front)
-            TokenType.Operator if Operator.fromSymbol(t.text) in Operator.unaryOps -> {
-                val op = Operator.fromSymbol(next().text)
-                UnaryExpr(op!!, primary()).also { it.at(t.row, t.col) }
-            }
-            TokenType.Keyword if t.text == "null" -> { next(); NullLiteral().also { it.at(t.row, t.col) } }
-            TokenType.Keyword if t.text == "this" -> { next(); ThisExpr().also { it.at(t.row, t.col) } }
-            TokenType.Keyword if t.text in setOf("if", "when") -> parseConditional()
-            // Function Calls, VariableGet, UnaryExpr(Back)
-            TokenType.Identifier -> {
-                val s = parent.ts.snapshot()
-                val name = next()
-                if (hasNext() && peek().type == TokenType.LParen) {
-                    // Unambiguous function call / 无歧义函数调用
-                    parent.ts.restore(s)
-                    return inModule.parseFunctionCall()
-                }
-                if (hasNext() && peek().type == TokenType.Operator && peek().text == "<") {
-                    // Speculatively check for generic call: name<TypeArgs>(...).
-                    // parseTypeArgs() uses its own snapshot/restore and only returns
-                    // non-empty when '<...>' is followed by '(', so 'v < lo' falls through.
-                    // 投机性检查泛型调用：parseTypeArgs() 内部自带 snapshot/restore，
-                    // 只有 '<...>' 后紧跟 '(' 才返回非空，'v < lo' 会原样回退。
-                    val typeArgs = parent.parseTypeArgs()
-                    if (typeArgs.isNotEmpty()) {
-                        parent.ts.restore(s)
-                        return inModule.parseFunctionCall()
-                    }
-                    // '<' is a comparison operator — fall through to VariableGet.
-                    // '<' 是比较运算符，继续走 VariableGet 路径。
-                }
-                if (hasNext() &&
-                    peek().type == TokenType.Operator &&
-                    Operator.fromSymbol(peek().text) in setOf(Operator.Increment, Operator.Decrement)
-                ) {
-                    val op = Operator.fromSymbol(next().text)
-                    return UnaryExpr(op!!, VariableGet(name.text).also { it.at(name.row, name.col) }).also { it.at(name.row, name.col) }
-                }
-                VariableGet(name.text).also { it.at(name.row, name.col) }
-            }
-            // Extract Parens
-            TokenType.LParen -> {
-                next()
-                val expr = parse()
-                next(TokenType.RParen)
-                expr
-            }
+    /** '?' 的 lbp：向前看一个 token 决定是 '?.'（POSTFIX_LBP）还是 '?:'（Elvis lbp）还是 0 */
+    private fun questionLbp(): Int {
+        val snap = parent.ts.snapshot()
+        next() // 消费 '?'
+        val result = when {
+            hasNext() && peek().type == TokenType.Dot -> POSTFIX_LBP
+            hasNext() && peek().type == TokenType.Colon -> binaryLbp(Operator.Elvis)
+            else -> 0
+        }
+        parent.ts.restore(snap)
+        return result
+    }
 
-            TokenType.LBrace -> {
-                next()
-                val arguments = tryParseLambdaArguments()
-                val builder = Module.Builder()
-                inModule.parse(builder, enableExpressionParsing = true)
-                next(TokenType.RBrace)
-                LambdaExpr(arguments, builder.build()).also { it.at(t.row, t.col) }
-            }
+    /** '!' 的 lbp：向前看，若紧跟 'is'/'in' 则返回比较级 lbp，否则为 0（纯前缀）*/
+    private fun bangLbp(): Int {
+        val snap = parent.ts.snapshot()
+        next() // 消费 '!'
+        val result = if (hasNext() && peek().type == TokenType.Keyword &&
+            peek().text in setOf("is", "in")
+        ) binaryLbp(Operator.NotIs) else 0
+        parent.ts.restore(snap)
+        return result
+    }
 
+    private fun nud(t: Token): Expression = when (t.type) {
+        in literals -> nudLiteral(t)
+
+        TokenType.Keyword -> when (t.text) {
+            "null" -> NullLiteral().also { it.at(t.row, t.col) }
+            "this" -> ThisExpr().also { it.at(t.row, t.col) }
+            "if" -> parseIf()
+            "when" -> parseWhen()
             else -> {
-                diagnostic("Unexpected token: '${t.text}'", throws = true)
+                diagnostic("Unexpected keyword: '${t.text}'", throws = true); throw IllegalStateException()
+            }
+        }
+
+        // 前缀运算符：!, ~, ++, --, +, -
+        TokenType.Operator -> {
+            val op = Operator.fromSymbol(t.text)
+            if (op != null && op in Operator.unaryOps) {
+                // UNARY_RBP 使后缀（lbp=100）先于一元被消费：-a.b → -(a.b)
+                UnaryExpr(op, parse(UNARY_RBP)).also { it.at(t.row, t.col) }
+            } else {
+                diagnostic("Unexpected operator in prefix position: '${t.text}'", throws = true)
                 throw IllegalStateException()
             }
         }
+
+        TokenType.Identifier -> nudIdentifier(t)
+
+        // 括号表达式
+        TokenType.LParen -> {
+            val expr = parse()
+            next(TokenType.RParen)
+            expr
+        }
+
+        // Lambda / 代码块
+        TokenType.LBrace -> {
+            val arguments = tryParseLambdaArguments()
+            val builder = Module.Builder()
+            inModule.parse(builder, enableExpressionParsing = true)
+            next(TokenType.RBrace)
+            LambdaExpr(arguments, builder.build()).also { it.at(t.row, t.col) }
+        }
+
+        else -> {
+            diagnostic("Unexpected token: '${t.text}'", throws = true)
+            throw IllegalStateException()
+        }
     }
 
-    fun parseConditional(): Statement {
-        if (peek().text == "if") return parseIf()
-        return parseWhen()
+    /**
+     * 标识符的 nud：变量读取、普通函数调用、泛型函数调用。
+     * t 已被 parse() 消费，此处直接根据后续 token 决定分支，无需 restore。
+     */
+    private fun nudIdentifier(t: Token): Expression {
+        // 普通函数调用 ident(...)
+        if (hasNext() && peek().type == TokenType.LParen) {
+            next() // 消费 '('
+            val arguments = parent.parseList { parse() }
+            return LFunctionCall(t.text, arguments).also { it.at(t.row, t.col) }
+        }
+
+        // 泛型函数调用 ident<T>(...)
+        // parseTypeArgs() 内部有 snapshot/restore：仅当 '<...>' 后紧跟 '(' 时返回非空列表
+        if (hasNext() && peek().type == TokenType.Operator && peek().text == "<") {
+            val typeArgs = parent.parseTypeArgs()
+            if (typeArgs.isNotEmpty()) {
+                next(TokenType.LParen) // parseTypeArgs 已验证 '(' 跟在后面
+                val arguments = parent.parseList { parse() }
+                return LFunctionCall(t.text, arguments, typeArgs).also { it.at(t.row, t.col) }
+            }
+            // '<' 是比较运算符，fall through 到 VariableGet
+        }
+
+        return VariableGet(t.text).also { it.at(t.row, t.col) }
+    }
+
+    private fun led(tok: Token, left: Expression): Expression = when (tok.type) {
+        TokenType.Dot -> {
+            val memberTok = next(TokenType.Identifier)
+            val typeArgs = parent.parseTypeArgs()
+            if (hasNext() && peek().type == TokenType.LParen) {
+                next() // 消费 '('
+                MethodCall(left, memberTok.text, parent.parseList { parse() }, typeArgs)
+                    .also { it.at(memberTok.row, memberTok.col) }
+            } else {
+                FieldAccess(left, memberTok.text)
+                    .also { it.at(memberTok.row, memberTok.col) }
+            }
+        }
+
+        TokenType.Question -> {
+            if (hasNext() && peek().type == TokenType.Dot) {
+                // ?. 安全导航
+                next() // 消费 '.'
+                val memberTok = next(TokenType.Identifier)
+                val typeArgs = parent.parseTypeArgs()
+                if (hasNext() && peek().type == TokenType.LParen) {
+                    next() // 消费 '('
+                    MethodCall(left, memberTok.text, parent.parseList { parse() }, typeArgs, safe = true)
+                        .also { it.at(memberTok.row, memberTok.col) }
+                } else {
+                    FieldAccess(left, memberTok.text, safe = true)
+                        .also { it.at(memberTok.row, memberTok.col) }
+                }
+            } else {
+                next() // 消费 ':'
+                BinaryExpr(left, Operator.Elvis, parse(binaryLbp(Operator.Elvis)))
+                    .also { it.at(tok.row, tok.col) }
+            }
+        }
+
+        TokenType.LParen ->
+            InvokeExpr(left, parent.parseList { parse() })
+                .also { it.at(tok.row, tok.col) }
+
+        TokenType.LBracket -> {
+            val index = parse()
+            next(TokenType.RBracket)
+            IndexAccess(left, index).also { it.at(tok.row, tok.col) }
+        }
+
+        TokenType.Keyword -> when (tok.text) {
+            "as" ->
+                AsExpr(left, parent.parseType()).also { it.at(tok.row, tok.col) }
+
+            "is" -> {
+                val typeTok = next(TokenType.Identifier)
+                BinaryExpr(
+                    left, Operator.Is,
+                    VariableGet(typeTok.text).also { it.at(typeTok.row, typeTok.col) })
+                    .also { it.at(tok.row, tok.col) }
+            }
+
+            "in" ->
+                BinaryExpr(left, Operator.In, parse(binaryLbp(Operator.In)))
+                    .also { it.at(tok.row, tok.col) }
+
+            else -> {
+                diagnostic("Unexpected keyword in infix position: '${tok.text}'", throws = true)
+                throw IllegalStateException()
+            }
+        }
+
+        TokenType.Operator -> when (tok.text) {
+            // 后缀一元
+            "!!" -> UnaryExpr(Operator.NotNull, left).also { it.at(tok.row, tok.col) }
+            "++" -> UnaryExpr(Operator.Increment, left).also { it.at(tok.row, tok.col) }
+            "--" -> UnaryExpr(Operator.Decrement, left).also { it.at(tok.row, tok.col) }
+
+            // !is / !in 复合操作符（bangLbp() 已确认后跟 'is'/'in'）
+            "!" -> {
+                val keyword = next(TokenType.Keyword)
+                when (keyword.text) {
+                    "is" -> {
+                        val typeTok = next(TokenType.Identifier)
+                        BinaryExpr(
+                            left, Operator.NotIs,
+                            VariableGet(typeTok.text).also { it.at(typeTok.row, typeTok.col) })
+                            .also { it.at(tok.row, tok.col) }
+                    }
+
+                    "in" ->
+                        BinaryExpr(left, Operator.NotIn, parse(binaryLbp(Operator.NotIn)))
+                            .also { it.at(tok.row, tok.col) }
+
+                    else -> {
+                        diagnostic("Expected 'is' or 'in' after '!'", throws = true)
+                        throw IllegalStateException()
+                    }
+                }
+            }
+
+            // 普通二元操作符（左结合：右侧用相同 lbp，同优先级不再被右侧消费）
+            else -> {
+                val op = Operator.fromSymbol(tok.text)
+                    ?: run {
+                        diagnostic(
+                            "Unknown operator: '${tok.text}'",
+                            throws = true
+                        ); throw IllegalStateException()
+                    }
+                BinaryExpr(left, op, parse(binaryLbp(op))).also { it.at(tok.row, tok.col) }
+            }
+        }
+
+        else -> {
+            diagnostic("Unexpected token in infix position: '${tok.text}'", throws = true)
+            throw IllegalStateException()
+        }
     }
 
     fun parseWhen(): When {
@@ -256,13 +316,14 @@ class ExpressionParser(parent: Parser) : SubParser(parent) {
             skipWs()
             if (peek().type == TokenType.RBrace) break
             val t = peek()
-            when {
-                t.type == TokenType.Keyword && t.text == "else" -> {
+            when (t.type) {
+                TokenType.Keyword if t.text == "else" -> {
                     next()
                     next(TokenType.Operator) // '->'
                     elseBranch = parseBranchBody()
                 }
-                t.type == TokenType.Keyword && t.text == "is" -> {
+
+                TokenType.Keyword if t.text == "is" -> {
                     next()
                     val typeName = next(TokenType.Identifier).text
                     val destructured = if (peek().type == TokenType.LParen) {
@@ -279,8 +340,10 @@ class ExpressionParser(parent: Parser) : SubParser(parent) {
                     next(TokenType.Operator) // '->'
                     branches.add(When.TypeBranch(typeName, destructured, guard, parseBranchBody()))
                 }
+
                 else -> {
-                    val expr = parse(Operator.Arrow.priority)
+                    // 解析分支条件，停在 '->' 前
+                    val expr = parse(binaryLbp(Operator.Arrow))
                     val guard = parseWhenGuard()
                     next(TokenType.Operator) // '->'
                     branches.add(When.ExprBranch(expr, guard, parseBranchBody()))
@@ -296,7 +359,7 @@ class ExpressionParser(parent: Parser) : SubParser(parent) {
     private fun parseWhenGuard(): Expression? =
         if (peek().type == TokenType.Keyword && peek().text == "if") {
             next()
-            parse(Operator.Arrow.priority)
+            parse(binaryLbp(Operator.Arrow)) // 停在 '->' 前
         } else null
 
     private fun parseBranchBody(): Module =
@@ -339,16 +402,17 @@ class ExpressionParser(parent: Parser) : SubParser(parent) {
                 val type = if (peek().type == TokenType.Colon) {
                     next()
                     parent.parseType()
-                } else {
-                    LType.INFER
-                }
+                } else LType.INFER
                 arguments.add(Argument(name, type))
                 when (peek().type) {
                     TokenType.Comma -> next()
                     TokenType.Operator if peek().text == "->" -> {
                         next(); return arguments
                     }
-                    else -> { parent.ts.restore(snap); return emptyList() }
+
+                    else -> {
+                        parent.ts.restore(snap); return emptyList()
+                    }
                 }
             }
         } catch (_: Exception) {
@@ -357,15 +421,12 @@ class ExpressionParser(parent: Parser) : SubParser(parent) {
         }
     }
 
-    fun parseLiteral(): Expression {
-        val t = next()
-        return when (t.type) {
-            TokenType.String -> parseStringWithInterpolation(t)
-            TokenType.Integer -> IntegerLiteral(Utils.toInt(t.text)).also { it.at(t.row, t.col) }
-            TokenType.Decimal -> DecimalLiteral(t.text.toDouble()).also { it.at(t.row, t.col) }
-            TokenType.BooleanLiteral -> BooleanLiteral(t.text.toBooleanStrict()).also { it.at(t.row, t.col) }
-            else -> throw IllegalStateException("Unexpected token: ${t.type} '${t.text}'")
-        }
+    private fun nudLiteral(t: Token): Expression = when (t.type) {
+        TokenType.String -> parseStringWithInterpolation(t)
+        TokenType.Integer -> IntegerLiteral(Utils.toInt(t.text)).also { it.at(t.row, t.col) }
+        TokenType.Decimal -> DecimalLiteral(t.text.toDouble()).also { it.at(t.row, t.col) }
+        TokenType.BooleanLiteral -> BooleanLiteral(t.text.toBooleanStrict()).also { it.at(t.row, t.col) }
+        else -> throw IllegalStateException("Unexpected literal token: ${t.type} '${t.text}'")
     }
 
     private fun parseStringWithInterpolation(t: Token): Expression {
@@ -379,7 +440,6 @@ class ExpressionParser(parent: Parser) : SubParser(parent) {
         while (i < content.length) {
             val ch = content[i]
             if (ch == '$' && i + 1 < content.length) {
-                // flush pending literal
                 if (current.isNotEmpty()) {
                     parts.add(StringLiteral(current.toString()).also { it.at(t.row, t.col) })
                     current.clear()
@@ -394,23 +454,30 @@ class ExpressionParser(parent: Parser) : SubParser(parent) {
                         while (i < content.length && depth > 0) {
                             val c = content[i]
                             if (c == '{') depth++
-                            else if (c == '}') { depth--; if (depth == 0) { i++; break } }
+                            else if (c == '}') {
+                                depth--; if (depth == 0) {
+                                    i++; break
+                                }
+                            }
                             exprText.append(c)
                             i++
                         }
                         val subExpr = parseEmbeddedExpr(exprText.toString())
                         parts.add(MethodCall(subExpr, "toString", emptyList()).also { it.at(t.row, t.col) })
                     }
+
                     content[i].isLetter() || content[i] == '_' -> {
                         // $ident
                         val sb = StringBuilder()
                         while (i < content.length && (content[i].isLetterOrDigit() || content[i] == '_'))
                             sb.append(content[i++])
-                        parts.add(MethodCall(
-                            VariableGet(sb.toString()).also { it.at(t.row, t.col) },
-                            "toString", emptyList()
-                        ).also { it.at(t.row, t.col) })
+                        parts.add(
+                            MethodCall(
+                                VariableGet(sb.toString()).also { it.at(t.row, t.col) },
+                                "toString", emptyList()
+                            ).also { it.at(t.row, t.col) })
                     }
+
                     else -> current.append('$') // 孤立 $，保留原样
                 }
             } else {

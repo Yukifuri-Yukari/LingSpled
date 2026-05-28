@@ -200,7 +200,7 @@ class InModuleParser(parent: Parser) : SubParser(parent) {
 
     /** 解析以标识符或 this 开头、后跟 . 的语句：赋值或方法调用 */
     fun parseDotStatement(): Statement {
-        val lhs = expr.parse(Operator.Assign.priority) // 停在赋值符前，不消费
+        val lhs = expr.parse(ExpressionParser.binaryLbp(Operator.Assign)) // 停在赋值符前，不消费
         val op = Operator.fromSymbol(peek().text)
         return if (op?.isAssignment() == true) {
             next()
