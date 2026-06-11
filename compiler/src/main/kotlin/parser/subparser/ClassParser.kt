@@ -1,271 +1,209 @@
 package yukifuri.lang.lingspled.compiler.parser.subparser
 
-import yukifuri.lang.lingspled.compiler.ast.base.Argument
-import yukifuri.lang.lingspled.compiler.ast.base.Expression
-import yukifuri.lang.lingspled.compiler.ast.base.Statement
-import yukifuri.lang.lingspled.compiler.ast.clazz.LClass
-import yukifuri.lang.lingspled.compiler.ast.clazz.LClassAttribute
-import yukifuri.lang.lingspled.compiler.ast.clazz.LClassConstructor
-import yukifuri.lang.lingspled.compiler.ast.function.LFunction
-import yukifuri.lang.lingspled.compiler.ast.module.Annotation
-import yukifuri.lang.lingspled.compiler.ast.module.Module
-import yukifuri.lang.lingspled.compiler.ast.type.LType
+import yukifuri.lang.lingspled.compiler.ast.LAFieldAccessExpr
+import yukifuri.lang.lingspled.compiler.ast.LAInvokeExpr
+import yukifuri.lang.lingspled.compiler.ast.LAStatement
+import yukifuri.lang.lingspled.compiler.ast.cls.LAAnnotation
+import yukifuri.lang.lingspled.compiler.ast.cls.LAClass
+import yukifuri.lang.lingspled.compiler.ast.cls.LAClassAttribute
+import yukifuri.lang.lingspled.compiler.ast.cls.LAClassConstructor
+import yukifuri.lang.lingspled.compiler.ast.cls.LAClassConstructorParameter
+import yukifuri.lang.lingspled.compiler.ast.cls.LAConstructorDelegation
+import yukifuri.lang.lingspled.compiler.ast.cls.LAPrimaryConstructor
+import yukifuri.lang.lingspled.compiler.ast.module.LAFunction
+import yukifuri.lang.lingspled.compiler.ast.module.LAModule
+import yukifuri.lang.lingspled.compiler.general.LTypeRef
+import yukifuri.lang.lingspled.compiler.lexer.Position
 import yukifuri.lang.lingspled.compiler.lexer.token.TokenType
 import yukifuri.lang.lingspled.compiler.parser.Parser
+import yukifuri.lang.lingspled.compiler.util.Modifiers
+import yukifuri.lang.lingspled.compiler.util.cast
 
 class ClassParser(parent: Parser) : SubParser(parent) {
-    fun parse(modifier: List<String>, annotations: List<Annotation> = emptyList()): LClass {
-        if (peek().type != TokenType.Keyword)
-            diagnostic("Expected keyword", throws = true)
-        return when (next().text) {
-            "class"     -> parseClass(modifier, annotations)
-            "interface" -> parseInterface(modifier, annotations)
-            else -> TODO()
-        }
+
+    private fun parse(): LAStatement {
+        skipWs()
+        val annotations = parseAnnotations()
+        skipWs()
+        val modifiers = parseModifiers()
+        skipWs()
+        return when {
+            peek("fun") -> module.functionDecl(annotations, modifiers)
+            peek("val") || peek("var") -> attribute(annotations, modifiers)
+            peek("constructor") -> constructor(annotations, modifiers)
+            peek("init") -> diagnostic("Init blocks are not supported yet")
+            peek("deconstructor") -> diagnostic("Deconstructors are not supported yet")
+            peek("class") -> diagnostic("Nested classes are not supported yet")
+            else -> diagnostic("Unexpected token in class body: \"${peek().text}\"")
+        }.also { skipStmtEnd() }
     }
 
-    /**
-     * Parse an interface declaration.
-     * Rules that differ from a class:
-     *  - No primary or secondary constructors.
-     *  - Fields must carry the `private` modifier; any other visibility is a diagnostic error.
-     *  - Methods without a body `{ }` are automatically marked `abstract`.
-     *  - Multiple super-interfaces are allowed (all entries in `:` list are interfaces).
-     *
-     * 解析接口声明。
-     * 与类的区别：
-     *  - 无主构造函数和次构造函数。
-     *  - 字段必须携带 `private` 修饰符，否则报错。
-     *  - 没有 `{ }` 体的方法自动标记为 `abstract`。
-     *  - 允许多个父接口（`:` 列表中所有条目均为接口）。
-     */
-    private fun parseInterface(modifier: List<String>, annotations: List<Annotation>): LClass {
-        val name = next(TokenType.Identifier)
-        val typeParams = parent.parseTypeParams()
-
-        // All entries after `:` are super-interfaces, not a super-class.
-        // `:` 之后的所有条目均为父接口，而非父类。
-        val superInterfaces = if (peek().type == TokenType.Colon) {
-            next(); skipWs()
-            val types = mutableListOf(parent.parseType())
-            while (hasNext() && peek().type == TokenType.Comma) {
-                next(); skipWs()
-                if (!hasNext() || peek().type == TokenType.LBrace) break
-                types.add(parent.parseType())
-            }
-            types
-        } else emptyList()
-
-        val fields   = mutableListOf<LClassAttribute>()
-        val methods  = mutableListOf<LFunction>()
-
-        if (hasNext() && peek().type == TokenType.LBrace) {
-            next() // consume '{'
-            while (hasNext() && peek().type != TokenType.RBrace) {
-                skipWs()
-                if (!hasNext() || peek().type == TokenType.RBrace) break
-                if (peek().type == TokenType.NewLine) { next(); continue }
-
-                val memberAnnotations = parent.parseAnnotations()
-                val memberModifiers   = parent.parseModifiers(extra = setOf("native", "override"))
-
-                when (peek().text) {
-                    "val", "var" -> {
-                        // Enforce private-only fields in interfaces.
-                        // 接口中的字段只能是 private。
-                        if ("private" !in memberModifiers)
-                            diagnostic("Interface fields must be private; use abstract class for shared state.")
-                        fields.add(parseClassAttributeDecl(memberModifiers))
-                    }
-                    "fun" -> methods.add(parseInterfaceMethod(memberModifiers, memberAnnotations))
-                    else  -> { diagnostic("Unexpected member in interface: '${peek().text}'", throws = true) }
-                }
-                skipWs()
-            }
-            next(TokenType.RBrace)
-        }
-
-        return LClass(
-            name.text, typeParams, superInterfaces, modifier,
-            fields, methods, annotations, isInterface = true
-        ).also { it.at(name.row, name.col) }
-    }
-
-    /**
-     * Parse one method inside an interface body.
-     * If the method has no `{ }` body it is abstract — `"abstract"` is prepended to its modifiers.
-     * If it has a body it is a default method.
-     *
-     * 解析接口体内的一个方法。
-     * 若方法没有 `{ }` 体则为抽象方法，自动将 `"abstract"` 添加到修饰符首位。
-     * 若有体则为默认方法。
-     */
-    private fun parseInterfaceMethod(modifiers: List<String>, annotations: List<Annotation>): LFunction {
-        val funTok    = next(TokenType.Keyword, "fun")
-        val typeParams = parent.parseTypeParams()
-        val name      = next(TokenType.Identifier)
-        next(TokenType.LParen)
-        val arguments = parent.parseList { parseFunctionArgument() }
-        val returnType = if (peek().type == TokenType.Colon) { next(); parent.parseType() }
-                         else LType("Unit")
-        return if (hasNext() && peek().type == TokenType.LBrace) {
-            // Default method — has a body / 默认方法，有体
-            next(TokenType.LBrace)
-            val body = inModule.parse(Module.Builder()).build()
-            next(TokenType.RBrace)
-            LFunction(modifiers, name.text, typeParams, arguments, returnType, body, annotations)
-                .also { it.at(funTok.row, funTok.col) }
-        } else {
-            // Abstract method — no body; prepend "abstract" so later passes can identify it.
-            // 抽象方法，无体；在修饰符首位加 "abstract" 以便后续阶段识别。
-            val abstractMods = if ("abstract" in modifiers) modifiers else listOf("abstract") + modifiers
-            LFunction(abstractMods, name.text, typeParams, arguments, returnType, Module(emptyList()), annotations)
-                .also { it.at(funTok.row, funTok.col) }
-        }
-    }
-
-    private fun parseClass(modifier: List<String>, annotations: List<Annotation>): LClass {
-        val name = next(TokenType.Identifier)
-
-        // 泛型类型参数: class Foo<T, U : Bound>
-        val typeParams = parent.parseTypeParams()
-
-        val defaultCtorModifiers = parent.parseModifiers()
-        val primaryCtorAttrs = mutableListOf<LClassAttribute>()
-        val defaultCtor: LClassConstructor? = if (hasNext() && (
-                    peek().type == TokenType.LParen ||
-                            (peek().type == TokenType.Keyword && peek().text == "constructor")
-                    )
-        ) {
-            val ctorStartTok = peek()
-            if (peek().type == TokenType.Keyword && peek().text == "constructor") next()
-            val args = parsePrimaryCtorParams(primaryCtorAttrs)
-            LClassConstructor(defaultCtorModifiers, args, Module(emptyList())).also { it.at(ctorStartTok.row, ctorStartTok.col) }
-        } else null
-
-        // superCtorArgs holds the constructor arguments for the first (primary) parent class:
-        //   class Dog(val name: String) : Animal(name)  →  superCtorArgs = [VariableGet("name")]
-        // Interface entries never have constructor calls so their arg lists remain empty.
-        var superCtorArgs: List<Expression> = emptyList()
-
-        val inheritances = if (peek().type == TokenType.Colon) {
+    private fun attribute(
+        annotations: List<LAAnnotation>,
+        modifiers: Pair<Modifiers.Access, List<Modifiers.ModifierType>>
+    ): LAClassAttribute {
+        val pos = peek().position
+        val mutable = next().text == "var"
+        val name = expectId().text
+        val type = if (tryConsume(TokenType.Colon)) parseTypeRef() else null
+        val init = if (peek("=", TokenType.Operator)) {
             next()
+            expr.parse(inModule = true)
+        } else null
+        // TODO: getter/setter
+        return LAClassAttribute(
+            annotations, modifiers.first, modifiers.second.cast(),
+            mutable, name, type, init, null, null, pos
+        )
+    }
+
+    private fun constructor(
+        annotations: List<LAAnnotation>,
+        modifiers: Pair<Modifiers.Access, List<Modifiers.ModifierType>>
+    ): LAClassConstructor {
+        val pos = peek().position
+        if (modifiers.second.isNotEmpty())
+            diagnostic("Constructors only accept access modifiers", start = pos)
+        expect(TokenType.Identifier, "constructor")
+        val params = parseList(TokenType.LParen, TokenType.RParen) { module.parseParameter() }
+
+        val delegation = if (tryConsume(TokenType.Colon)) {
             skipWs()
-            val types = mutableListOf(parent.parseType())
-            // Capture super-constructor args for the first parent type.
-            if (hasNext() && peek().type == TokenType.LParen) {
-                next(); superCtorArgs = parent.parseList { parent.expr.parse() }
-            }
-            while (hasNext() && peek().type == TokenType.Comma) {
-                next(); skipWs()
-                if (!hasNext() || peek().type == TokenType.LBrace) break
-                types.add(parent.parseType())
-                // Subsequent parents (interfaces) — consume args but discard.
-                if (hasNext() && peek().type == TokenType.LParen) {
-                    next(); parent.parseList { parent.expr.parse() }
-                }
-            }
-            types
-        } else listOf(LType("Any"))
-
-        val module = if (hasNext() && peek().type == TokenType.LBrace) {
+            val target = peek()
+            if (target.text != "this" && target.text != "super")
+                diagnostic("Expected 'this' or 'super' constructor delegation")
             next()
-            val m = parse(Module.Builder()).build()
-            next(TokenType.RBrace)
-            m
-        } else Module(emptyList())
-
-        val functions = module.statements.filterIsInstance<LFunction>().toMutableList()
-        if (defaultCtor != null) functions.add(0, defaultCtor)
-
-        val allAttrs = primaryCtorAttrs + module.statements.filterIsInstance<LClassAttribute>()
-
-        return LClass(name.text, typeParams, inheritances, modifier, allAttrs, functions, annotations,
-            superCtorArgs = superCtorArgs).also { it.at(name.row, name.col) }
-    }
-
-    private fun parsePrimaryCtorParams(
-        primaryCtorAttrs: MutableList<LClassAttribute>
-    ): List<Argument> {
-        next(TokenType.LParen)
-        return parent.parseList {
-            val propKind = if (peek().type == TokenType.Keyword &&
-                peek().text in setOf("val", "var")
-            ) next().text else null
-
-            val paramName = next(TokenType.Identifier) {
-                "Expected parameter name, got '${it.text}'"
-            }.text
-            next(TokenType.Colon)
-            val paramType = parent.parseType()
-
-            val defaultVal = if (peek().type == TokenType.Operator && peek().text == "=") {
-                next()
-                expr.parse()
-            } else null
-
-            if (propKind != null) {
-                primaryCtorAttrs.add(
-                    LClassAttribute(emptyList(), paramName, paramType, defaultVal, propKind == "val")
-                )
-            }
-
-            Argument(paramName, paramType, defaultVal)
-        }
-    }
-
-    private fun parse(ast: Module.Builder): Module.Builder {
-        while (hasNext() && peek().type != TokenType.RBrace) {
-            if (peek().type == TokenType.NewLine) {
-                next()
-                continue
-            }
-            if (peek().type == TokenType.Semicolon)
-                diagnostic("Unexpected statement terminator")
-            ast.add(once())
-            skipStmtEnd()
-        }
-        return ast
-    }
-
-    private fun once(): Statement {
-        val annotations = parent.parseAnnotations()
-        val modifiers = parent.parseModifiers(extra = setOf("native"))
-        if (peek().type != TokenType.Keyword) {
-            diagnostic("${peek().text}: Expected Keyword", throws = true)
-        }
-        return when (peek().text) {
-            in setOf("val", "var") -> parseClassAttributeDecl(modifiers)
-            "fun" -> inModule.parseFunctionDecl(modifiers, annotations)
-            "constructor" -> parseClassConstructor(modifiers)
-            else -> TODO()
-        }
-    }
-
-    private fun parseClassAttributeDecl(modifiers: List<String>): LClassAttribute {
-        val kwTok = next()
-        val isConstant = kwTok.text == "val"
-        val name = next(TokenType.Identifier) { "Expected attribute name, actually \"${it.text}\"" }.text
-        val type = if (peek().type == TokenType.Colon) {
-            next()
-            parent.parseType()
-        } else
-            LType.INFER
-        val initExpr = if (peek().type == TokenType.Operator && peek().text == "=") {
-            next()
-            expr.parse()
+            val args = parseList(TokenType.LParen, TokenType.RParen) { module.parseArgument() }
+            if (target.text == "this") LAConstructorDelegation.This(args)
+            else LAConstructorDelegation.Super(args)
         } else null
-        return LClassAttribute(modifiers, name, type, initExpr, isConstant).also { it.at(kwTok.row, kwTok.col) }
+
+        val body = if (peek(TokenType.LBrace)) module.parseBody() else null
+        return LAClassConstructor(annotations, modifiers.first, params, delegation, body, pos)
     }
 
-    private fun parseClassConstructor(modifiers: List<String>): LClassConstructor {
-        val ctorTok = next(TokenType.Keyword, "constructor")
-        next(TokenType.LParen)
-        val arguments = parent.parseList { parseFunctionArgument() }
-        next(TokenType.LBrace)
-        val module = inModule.parse(Module.Builder()).build()
-        next(TokenType.RBrace)
-        val ctor = LClassConstructor(modifiers, arguments, module)
-        return ctor.also { it.at(ctorTok.row, ctorTok.col) }
+    fun cls(
+        annotations: List<LAAnnotation>,
+        modifiers: Pair<Modifiers.Access, List<Modifiers.ModifierType>>
+    ): LAClass {
+        val pos = expect(TokenType.Keyword, "class").position
+        val name = expectId().text
+        val tp =
+            if (peek("<", TokenType.Operator)) parseTypeParams()
+            else emptyList()
+
+        val primary = primaryCtor()
+
+        val supertypes =
+            if (tryConsume(TokenType.Colon)) parseSuperDecl()
+            else buildAny(pos) to listOf(LTypeRef.any)
+
+        val resolvedTp = parseWhereClause(tp)
+
+        val ctors = mutableListOf<LAClassConstructor>()
+        val functions = mutableListOf<LAFunction>()
+        val attrs = mutableListOf<LAClassAttribute>()
+
+        if (tryConsume(TokenType.LBrace)) {
+            skipWs()
+            while (hasNext() && !peek(TokenType.RBrace)) {
+                when (val member = parse()) {
+                    is LAClassConstructor -> ctors.add(member)
+                    is LAClassAttribute -> attrs.add(member)
+                    is LAFunction -> functions.add(member)
+                    else -> diagnostic("Unexpected member in class body", start = member.position)
+                }
+                skipWs()
+            }
+            if (!tryConsume(TokenType.RBrace))
+                diagnostic("Expected '}' to close class body", start = pos)
+        }
+
+        return LAClass(
+            annotations, modifiers.first, modifiers.second.cast(),
+            name, resolvedTp, supertypes.first, supertypes.second,
+            primary, ctors, functions, attrs, pos
+        )
+    }
+
+    // (val x: Int) / constructor(...) / private constructor(...)；没有参数列表则返回 null
+    private fun primaryCtor(): LAPrimaryConstructor? {
+        if (!hasNext()) return null
+
+        val access: Modifiers.Access
+        if (!peek(TokenType.LParen)) {
+            val s = parent.ts.snapshot()
+            val acc = if (peek().text in Modifiers.Access.map) Modifiers.Access.map[next().text] else null
+            if (!tryConsume(TokenType.Identifier, "constructor")) {
+                parent.ts.restore(s)
+                return null
+            }
+            access = acc ?: Modifiers.Access.Public
+        } else access = Modifiers.Access.Public
+
+        val pos = peek().position
+        val params = parseList(TokenType.LParen, TokenType.RParen) { ctorParameter() }
+        return LAPrimaryConstructor(emptyList(), access, params, pos)
+    }
+
+    // [@Anno] [access] [val|var] name: Type [= default]
+    private fun ctorParameter(): LAClassConstructorParameter {
+        val annotations = parseAnnotations()
+        skipWs()
+        val pos = peek().position
+        val access =
+            if (peek().text in Modifiers.Access.map) Modifiers.Access.map[next().text]!!
+            else Modifiers.Access.Public
+        val mutable = when {
+            tryConsume(TokenType.Keyword, "val") -> false
+            tryConsume(TokenType.Keyword, "var") -> true
+            else -> null
+        }
+        val name = expectId().text
+        expect(TokenType.Colon)
+        val type = parseTypeRef()
+        val default = if (tryConsume(TokenType.Operator, "=")) expr.parse() else null
+        return LAClassConstructorParameter(annotations, access, mutable, name, type, default, pos)
+    }
+
+    private fun parseSuperDecl(): Pair<LAInvokeExpr, List<LTypeRef>> {
+        val pos = peek().position
+        var superclass: LAInvokeExpr? = null
+        val supertypes = mutableListOf<LTypeRef>()
+
+        do {
+            skipWs()
+            val pos = peek().position
+            val type = parseTypeRef()
+
+            if (peek(TokenType.LParen)) {
+                // 带 (...) 的是超类构造调用，只允许一个
+                if (superclass != null)
+                    diagnostic("Multiple superclasses are not supported", start = pos)
+
+                val args = parseList(TokenType.LParen, TokenType.RParen) {
+                    module.parseArgument()
+                }
+                superclass = LAInvokeExpr(
+                    LAFieldAccessExpr(field = type.name, position = pos),
+                    args,
+                    pos
+                )
+                supertypes.add(0, type)   // 超类放在列表首位
+            } else {
+                supertypes.add(type)      // 无括号的视为接口
+            }
+            skipWs()
+        } while (tryConsume(TokenType.Comma))
+
+        if (superclass == null)
+            supertypes.add(0, LTypeRef.any)
+
+        return (superclass ?: buildAny(pos)) to supertypes
+    }
+
+    companion object {
+        val buildAny = { pos: Position ->
+            LAInvokeExpr(LAFieldAccessExpr(field = "Any", position = pos), listOf(), pos) }
     }
 }

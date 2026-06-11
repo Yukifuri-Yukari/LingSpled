@@ -1,0 +1,14 @@
+package ling.stream
+
+abstract class PrintStream {
+    fun println(s: String) {
+        print(s)
+        nextln()
+    }
+
+    abstract fun print(s: String)
+
+    fun nextln() {
+        print("\n")
+    }
+}

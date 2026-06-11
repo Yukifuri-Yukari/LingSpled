@@ -1,0 +1,12 @@
+package ling.std
+
+class String(
+    var arr: Array<Char> = Array(0)
+) {
+
+    constructor(other: String) : this(other.arr)
+
+    operator fun plus(other: Any) = String(arr + other.toString().arr)
+
+    override fun toString() = arr.toString()
+}

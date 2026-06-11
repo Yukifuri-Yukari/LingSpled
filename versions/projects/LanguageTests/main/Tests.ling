@@ -1,0 +1,87 @@
+package language.test
+
+internal static native fun println(): Unit
+
+internal infix fun Int.infix(other: Int): Int {
+    return this + other
+}
+
+val pi: Double = 3.14
+val flag = true
+var count: Int = 0
+var name: String
+
+public fun <T> Array<T>.first(): T {
+    return this[0]
+}
+
+internal fun String?.orEmpty(): String {
+    return this ?: ""
+}
+
+fun <A, B, C : Array<A>> complexTp() where B : I<B>, B : I2<B> {}
+
+public fun main(args: Array<String>) {
+    println("Hello, World!")
+
+    getA(a + 1)(22, a infix b)
+
+    // 1 + 1 (Binary)
+    println(1
+    + 1 )
+    println(
+        1 +
+        1
+    )
+    // 1 & +1 (Unary)
+    1
+    + 1
+
+    val x = 1 + 2
+    var msg: String = "hi"
+}
+
+class Empty
+
+class Repo<T> : Iterable<T> where T : Any
+
+data class Pair2<A, B>(val first: A, val second: B)
+
+@Deprecated("use Token instead")
+class LegacyToken(@Deprecated val raw: String)
+
+class Point(val x: Int, val y: Int) {
+    fun lengthSquared(): Int {
+        return x * x + y * y
+    }
+}
+
+class Counter(var count: Int = 0) {
+    constructor() : this(0)
+
+    fun increment(): Unit {
+        count = count + 1
+    }
+}
+
+class Shape(val name: String) {
+    fun describe(): String {
+        return name
+    }
+}
+
+class NamedPoint(val x: Int, val y: Int) : Shape("point"), Comparable<NamedPoint> {
+    override fun compareTo(other: NamedPoint): Int {
+        return x - other.x
+    }
+}
+
+class Box<T : Any>(private val value: T) {
+    fun get(): T {
+        return value
+    }
+}
+
+class Token private constructor(val raw: String) {
+    constructor() : this("")
+}

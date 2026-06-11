@@ -1,0 +1,9 @@
+package ling.std
+
+fun println(text: String) {
+    Console.stdout.println(text)
+}
+
+fun print(text: String) {
+    Console.stdout.print(text)
+}

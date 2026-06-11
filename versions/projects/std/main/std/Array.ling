@@ -1,0 +1,12 @@
+package ling.std
+
+native class Array<T>(
+    val size: Int
+) {
+
+    native operator fun get(index: Int): T
+    native operator fun set(index: Int, value: T): Unit
+    native operator fun plus(other: Array<T>): Array<T> /* Reference: l + r => new */
+
+    native fun toString(): String
+}

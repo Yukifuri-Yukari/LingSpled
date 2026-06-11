@@ -1,28 +1,13 @@
 package yukifuri.lang.lingspled.compiler.lexer.token
 
+import yukifuri.lang.lingspled.compiler.lexer.Position
+
 data class Token(
     val text: String,
-    val type: TokenType,
-    val row: Int,
-    val col: Int,
+    var type: TokenType,
+    private val row: Int, private val col: Int,
+    val position: Position = row to col
 ) {
-    override fun toString(): String {
-        return "Token(text=\"$text\", type=$type, pos=($row, $col))"
-    }
 
-    override fun equals(other: Any?): Boolean {
-        if (this === other) return true
-        if (other !is Token) return false
-
-        if (text != other.text) return false
-        if (type != other.type) return false
-
-        return true
-    }
-
-    override fun hashCode(): Int {
-        var result = text.hashCode()
-        result = 31 * result + type.hashCode()
-        return result
-    }
+    override fun toString() = "Token(text='$text', type=$type, position=$position)"
 }

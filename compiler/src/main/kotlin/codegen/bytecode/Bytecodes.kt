@@ -5,155 +5,155 @@ package yukifuri.lang.lingspled.compiler.codegen.bytecode
  */
 object Bytecodes {
     // Bytecodes
-    const val NOP: Byte = 0x00
+    const val NOP: Byte = 0x00 // 0
 
-    const val PUSH8: Byte = 0x01
-    const val PUSH16: Byte = 0x02
-    const val PUSH32: Byte = 0x03
-    const val PUSH64: Byte = 0x04
-    const val POP: Byte = 0x05
-    const val WPOP: Byte = 0x06
-    const val APOP: Byte = 0x07
-    const val DUP: Byte = 0x08
-    const val WDUP: Byte = 0x09
-    const val ADUP: Byte = 0x0A
-    const val NDUPX1: Byte = 0x0B
-    const val ADUPX1: Byte = 0x0C
-    const val SWAP: Byte = 0x0D
-    const val WSWAP: Byte = 0x0E
-    const val ASWAP: Byte = 0x0F
+    const val PUSH8 : Byte = 0x01 // 1
+    const val PUSH16: Byte = 0x02 // 2
+    const val PUSH32: Byte = 0x03 // 3
+    const val PUSH64: Byte = 0x04 // 4
+    const val POP   : Byte = 0x05 // 5
+    const val WPOP  : Byte = 0x06 // 6
+    const val APOP  : Byte = 0x07 // 7
+    const val DUP   : Byte = 0x08 // 8
+    const val WDUP  : Byte = 0x09 // 9
+    const val ADUP  : Byte = 0x0A // 10
+    const val NDUPX1: Byte = 0x0B // 11
+    const val ADUPX1: Byte = 0x0C // 12
+    const val SWAP  : Byte = 0x0D // 13
+    const val WSWAP : Byte = 0x0E // 14
+    const val ASWAP : Byte = 0x0F // 15
 
-    const val ADD: Byte = 0x10
-    const val SUB: Byte = 0x11
-    const val MUL: Byte = 0x12
-    const val DIV: Byte = 0x13
-    const val MOD: Byte = 0x14
-    const val WADD: Byte = 0x15
-    const val WSUB: Byte = 0x16
-    const val WMUL: Byte = 0x17
-    const val WDIV: Byte = 0x18
-    const val WMOD: Byte = 0x19
-    const val FADD: Byte = 0x1A
-    const val FSUB: Byte = 0x1B
-    const val FMUL: Byte = 0x1C
-    const val FDIV: Byte = 0x1D
-    const val FMOD: Byte = 0x1E
-    const val DADD: Byte = 0x1F
-    const val DSUB: Byte = 0x20
-    const val DMUL: Byte = 0x21
-    const val DDIV: Byte = 0x22
-    const val DMOD: Byte = 0x23
-    const val NEG: Byte = 0x24
-    const val WNEG: Byte = 0x25
-    const val FNEG: Byte = 0x26
-    const val DNEG: Byte = 0x27
+    const val ADD : Byte = 0x10 // 16
+    const val SUB : Byte = 0x11 // 17
+    const val MUL : Byte = 0x12 // 18
+    const val DIV : Byte = 0x13 // 19
+    const val MOD : Byte = 0x14 // 20
+    const val WADD: Byte = 0x15 // 21
+    const val WSUB: Byte = 0x16 // 22
+    const val WMUL: Byte = 0x17 // 23
+    const val WDIV: Byte = 0x18 // 24
+    const val WMOD: Byte = 0x19 // 25
+    const val FADD: Byte = 0x1A // 26
+    const val FSUB: Byte = 0x1B // 27
+    const val FMUL: Byte = 0x1C // 28
+    const val FDIV: Byte = 0x1D // 29
+    const val FMOD: Byte = 0x1E // 30
+    const val DADD: Byte = 0x1F // 31
+    const val DSUB: Byte = 0x20 // 32
+    const val DMUL: Byte = 0x21 // 33
+    const val DDIV: Byte = 0x22 // 34
+    const val DMOD: Byte = 0x23 // 35
+    const val NEG : Byte = 0x24 // 36
+    const val WNEG: Byte = 0x25 // 37
+    const val FNEG: Byte = 0x26 // 38
+    const val DNEG: Byte = 0x27 // 39
 
-    const val SHL: Byte = 0x28
-    const val SHR: Byte = 0x29
-    const val BAND: Byte = 0x2A
-    const val BOR: Byte = 0x2B
-    const val XOR: Byte = 0x2C
-    const val BNOT: Byte = 0x2D
-    const val USHR: Byte = 0x2E
-    const val WSHL: Byte = 0x2F
-    const val WSHR: Byte = 0x30
-    const val WBAND: Byte = 0x31
-    const val WBOR: Byte = 0x32
-    const val WXOR: Byte = 0x33
-    const val WBNOT: Byte = 0x34
-    const val WUSHR: Byte = 0x35
-    const val NOT: Byte = 0x36
-    const val ROTL: Byte = 0x37
-    const val ROTR: Byte = 0x38
+    const val SHL  : Byte = 0x28 // 40
+    const val SHR  : Byte = 0x29 // 41
+    const val BAND : Byte = 0x2A // 42
+    const val BOR  : Byte = 0x2B // 43
+    const val XOR  : Byte = 0x2C // 44
+    const val BNOT : Byte = 0x2D // 45
+    const val USHR : Byte = 0x2E // 46
+    const val WSHL : Byte = 0x2F // 47
+    const val WSHR : Byte = 0x30 // 48
+    const val WBAND: Byte = 0x31 // 49
+    const val WBOR : Byte = 0x32 // 50
+    const val WXOR : Byte = 0x33 // 51
+    const val WBNOT: Byte = 0x34 // 52
+    const val WUSHR: Byte = 0x35 // 53
+    const val NOT  : Byte = 0x36 // 54
+    const val ROTL : Byte = 0x37 // 55
+    const val ROTR : Byte = 0x38 // 56
 
-    const val CMPEQ: Byte = 0x39
-    const val CMPNE: Byte = 0x3A
-    const val CMPLT: Byte = 0x3B
-    const val CMPLE: Byte = 0x3C
-    const val CMPGT: Byte = 0x3D
-    const val CMPGE: Byte = 0x3E
-    const val WCMPEQ: Byte = 0x3F
-    const val WCMPNE: Byte = 0x40
-    const val WCMPLT: Byte = 0x41
-    const val WCMPLE: Byte = 0x42
-    const val WCMPGT: Byte = 0x43
-    const val WCMPGE: Byte = 0x44
-    const val FCMPL: Byte = 0x45
-    const val FCMPG: Byte = 0x46
-    const val DCMPL: Byte = 0x47
-    const val DCMPG: Byte = 0x48
-    const val ACMPEQ: Byte = 0x49
-    const val ACMPNE: Byte = 0x4A
+    const val CMPEQ : Byte = 0x39 // 57
+    const val CMPNE : Byte = 0x3A // 58
+    const val CMPLT : Byte = 0x3B // 59
+    const val CMPLE : Byte = 0x3C // 60
+    const val CMPGT : Byte = 0x3D // 61
+    const val CMPGE : Byte = 0x3E // 62
+    const val WCMPEQ: Byte = 0x3F // 63
+    const val WCMPNE: Byte = 0x40 // 64
+    const val WCMPLT: Byte = 0x41 // 65
+    const val WCMPLE: Byte = 0x42 // 66
+    const val WCMPGT: Byte = 0x43 // 67
+    const val WCMPGE: Byte = 0x44 // 68
+    const val FCMPL : Byte = 0x45 // 69
+    const val FCMPG : Byte = 0x46 // 70
+    const val DCMPL : Byte = 0x47 // 71
+    const val DCMPG : Byte = 0x48 // 72
+    const val ACMPEQ: Byte = 0x49 // 73
+    const val ACMPNE: Byte = 0x4A // 74
 
-    const val NEW: Byte = 0x4B
-    const val CHECKNUL: Byte = 0x4C
-    const val PUSHNUL: Byte = 0x4D
-    const val LDFIELD: Byte = 0x4E
-    const val STFIELD: Byte = 0x4F
-    const val GETCLASS: Byte = 0x50
-    const val CAST: Byte = 0x51
-    const val ISINSTANCE: Byte = 0x52
-    const val INVOKESPEC: Byte = 0x53
-    const val INVOKESUPR: Byte = 0x54
-    const val INVOKEINST: Byte = 0x55
-    const val INVOKESTAT: Byte = 0x56
-    const val CALL: Byte = 0x57
-    const val SYNCBEGIN: Byte = 0x58
-    const val SYNCEND: Byte = 0x59
-    const val SYNCREF: Byte = 0x5A
+    const val NEW       : Byte = 0x4B // 75
+    const val CHECKNUL  : Byte = 0x4C // 76
+    const val PUSHNUL   : Byte = 0x4D // 77
+    const val LDFIELD   : Byte = 0x4E // 78
+    const val STFIELD   : Byte = 0x4F // 79
+    const val GETCLASS  : Byte = 0x50 // 80
+    const val CAST      : Byte = 0x51 // 81
+    const val ISINSTANCE: Byte = 0x52 // 82
+    const val INVOKESPEC: Byte = 0x53 // 83
+    const val INVOKESUPR: Byte = 0x54 // 84
+    const val INVOKEINST: Byte = 0x55 // 85
+    const val INVOKESTAT: Byte = 0x56 // 86
+    const val CALL      : Byte = 0x57 // 87
+    const val SYNCBEGIN : Byte = 0x58 // 88
+    const val SYNCEND   : Byte = 0x59 // 89
+    const val SYNCREF   : Byte = 0x5A // 90
 
-    const val JUMP: Byte = 0x5B
-    const val WJUMP: Byte = 0x5C
-    const val JEQ: Byte = 0x5D
-    const val JNE: Byte = 0x5E
-    const val JLT: Byte = 0x5F
-    const val JLE: Byte = 0x60
-    const val JGT: Byte = 0x61
-    const val JGE: Byte = 0x62
-    const val JNUL: Byte = 0x63
-    const val JNNUL: Byte = 0x64
-    const val WHENTABLE: Byte = 0x65
-    const val WHENLOOKUP: Byte = 0x66
-    const val THROW: Byte = 0x67
-    const val RETURN: Byte = 0x68
-    const val WRETURN: Byte = 0x69
-    const val ARETURN: Byte = 0x6A
-    const val RETURNV: Byte = 0x6B
+    const val JUMP      : Byte = 0x5B // 91
+    const val WJUMP     : Byte = 0x5C // 92
+    const val JEQ       : Byte = 0x5D // 93
+    const val JNE       : Byte = 0x5E // 94
+    const val JLT       : Byte = 0x5F // 95
+    const val JLE       : Byte = 0x60 // 96
+    const val JGT       : Byte = 0x61 // 97
+    const val JGE       : Byte = 0x62 // 98
+    const val JNUL      : Byte = 0x63 // 99
+    const val JNNUL     : Byte = 0x64 // 100
+    const val WHENTABLE : Byte = 0x65 // 101
+    const val WHENLOOKUP: Byte = 0x66 // 102
+    const val THROW     : Byte = 0x67 // 103
+    const val RETURN    : Byte = 0x68 // 104
+    const val WRETURN   : Byte = 0x69 // 105
+    const val ARETURN   : Byte = 0x6A // 106
+    const val RETURNV   : Byte = 0x6B // 107
 
-    const val LOAD: Byte = 0x6C
-    const val STORE: Byte = 0x6D
-    const val WLOAD: Byte = 0x6E
-    const val WSTORE: Byte = 0x6F
-    const val ALOAD: Byte = 0x70
-    const val ASTORE: Byte = 0x71
+    const val LOAD  : Byte = 0x6C // 108
+    const val STORE : Byte = 0x6D // 109
+    const val WLOAD : Byte = 0x6E // 110
+    const val WSTORE: Byte = 0x6F // 111
+    const val ALOAD : Byte = 0x70 // 112
+    const val ASTORE: Byte = 0x71 // 113
 
-    const val NARRNEW: Byte = 0x72
-    const val WARRNEW: Byte = 0x73
-    const val AARRNEW: Byte = 0x74
-    const val ARRLEN: Byte = 0x75
-    const val NARRLOD: Byte = 0x76
-    const val NARRSTR: Byte = 0x77
-    const val WARRLOD: Byte = 0x78
-    const val WARRSTR: Byte = 0x79
-    const val AARRLOD: Byte = 0x7A
-    const val AARRSTR: Byte = 0x7B
+    const val NARRNEW: Byte = 0x72 // 114
+    const val WARRNEW: Byte = 0x73 // 115
+    const val AARRNEW: Byte = 0x74 // 116
+    const val ARRLEN : Byte = 0x75 // 117
+    const val NARRLOD: Byte = 0x76 // 118
+    const val NARRSTR: Byte = 0x77 // 119
+    const val WARRLOD: Byte = 0x78 // 120
+    const val WARRSTR: Byte = 0x79 // 121
+    const val AARRLOD: Byte = 0x7A // 122
+    const val AARRSTR: Byte = 0x7B // 123
 
-    const val LDC: Byte = 0x7C
-    const val LDC2: Byte = 0x7D
-    const val N2W: Byte = 0x7E
-    const val W2N: Byte = 0x7F
-    const val N2F: Byte = -0x80 // 0x80
-    const val F2N: Byte = -0x7F // 0x81
-    const val N2D: Byte = -0x7E // 0x82
-    const val D2N: Byte = -0x7D // 0x83
-    const val W2F: Byte = -0x7C // 0x84
-    const val F2W: Byte = -0x7B // 0x85
-    const val W2D: Byte = -0x7A // 0x86
-    const val D2W: Byte = -0x79 // 0x87
-    const val F2D: Byte = -0x78 // 0x88
-    const val D2F: Byte = -0x77 // 0x89
+    const val LDC : Byte = 0x7C // 124
+    const val LDC2: Byte = 0x7D // 125
+    const val N2W : Byte = 0x7E // 126
+    const val W2N : Byte = 0x7F // 127
+    const val N2F : Byte = -0x80 // 0x80 (128, -128)
+    const val F2N : Byte = -0x7F // 0x81 (129, -127)
+    const val N2D : Byte = -0x7E // 0x82 (130, -126)
+    const val D2N : Byte = -0x7D // 0x83 (131, -125)
+    const val W2F : Byte = -0x7C // 0x84 (132, -124)
+    const val F2W : Byte = -0x7B // 0x85 (133, -123)
+    const val W2D : Byte = -0x7A // 0x86 (134, -122)
+    const val D2W : Byte = -0x79 // 0x87 (135, -121)
+    const val F2D : Byte = -0x78 // 0x88 (136, -120)
+    const val D2F : Byte = -0x77 // 0x89 (137, -119)
 
-    const val LINENUM: Byte = -0x76 // 0x8A
+    const val LINENUM: Byte = -0x76 // 0x8A (138, -118)
 
     val bytecodes = listOf(
         "nop", "_",
@@ -240,8 +240,14 @@ object Bytecodes {
         "_"
     )
 
+    val opcodes = bytecodes
+        .filter { it != "_" }
+        .mapIndexed { index, name -> name to if (index >= 128) index - 256 else index }
+        .toMap()
+
     fun generate() {
         prints("Bytecodes", bytecodes)
+        println(opcodes)
     }
 
     fun prints(mess: String, list: List<String>) {
@@ -249,10 +255,10 @@ object Bytecodes {
             val name = name.replace(" ", "_")
             val hex = index.toString(16).uppercase().padStart(2, '0')
             val literal = if (index <= 127)
-                "0x$hex"
+                "0x$hex // $index"
             else {
                 val neg = (256 - index).toString(16).uppercase().padStart(2, '0')
-                "-0x$neg // 0x$hex"
+                "-0x$neg // 0x$hex ($index, ${index - 256})"
             }
             println("const val ${name.uppercase()}${" ".repeat(pad - name.length)}: Byte = $literal")
         }

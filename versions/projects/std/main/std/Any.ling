@@ -1,0 +1,9 @@
+package ling.std
+
+class Any {
+    fun toString(): String = "<Object>"
+
+    fun equals(other: Any?): Boolean = false
+
+    fun hashCode(): Int = -1
+}

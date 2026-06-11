@@ -86,21 +86,76 @@
 描述符格式同 JVM，但使用 LingSpled 类型字符：`(<参数类型...>)<返回类型>`  
 类型字符映射（见 `LType.descriptorChar`）：
 
-| LingSpled 类型 |   字符    |       示例        |
-|:------------:|:-------:|:---------------:|
-|     Byte     |   `B`   |                 |
-|    Short     |   `S`   |                 |
-|     Int      |   `I`   |                 |
-|     Long     |   `L`   |                 |
-|    Float     |   `F`   |                 |
-|    Double    |   `D`   |                 |
-|   Boolean    |   `O`   |                 |
-|    String    |   `N`   |                 |
-|     Unit     |   `V`   |                 |
-|   类引用 Foo    | `RFoo;` | 以 `R` 开头，`;` 结尾 |
+| LingSpled 类型 |            字符             |              示例              |
+|:------------:|:-------------------------:|:----------------------------:|
+|     Byte     |            `B`            |                              |
+|    Short     |            `S`            |                              |
+|     Int      |            `I`            |                              |
+|     Long     |            `L`            |                              |
+|    Float     |            `F`            |                              |
+|    Double    |            `D`            |                              |
+|   Boolean    |            `O`            |                              |
+|    String    |  `Rling/std/String;`（FQN）  | 不再使用单字符 `N`                  |
+|     Any      |  `Rling/std/Any;`（FQN）    | 不再使用单字符 `A`                  |
+|     Unit     |            `V`            |                              |
+|  类引用（含 FQN）  | `R<root>/<pkg>/Name<TP>;` | 以 `R` 开头，`;` 结尾，包路径用 `/` 分隔  |
 
 示例：`fun add(a: Int, b: Int): Unit` → 描述符 `(II)V`  
-示例：`fun greet(name: String): String` → 描述符 `(N)N`
+示例：`fun greet(name: String): String` → 描述符 `(N)N`  
+示例：`fun id(x: Any): Any` → 描述符 `(Rling/std/Any;)Rling/std/Any;`
+
+## 全限定名（FQN）格式
+
+LingSpled 中所有跨文件引用均使用全限定名，以避免不同包中同名符号冲突。
+
+### 类 / 类型 FQN
+
+```
+R<rootPackage>/<subPackage>/.../ClassName[<TP1,TP2:UpperBound,...>];
+```
+
+- 包路径各段之间用 `/` 分隔
+- 类名紧跟最后一个 `/` 之后
+- 若有泛型实参，以 `<...>` 跟在类名之后，实参之间用 `,` 分隔
+- 以 `;` 结尾
+
+#### 类型参数（Type Parameter）与类型实参（Type Argument）区别
+
+| 上下文 | 格式 | 说明 |
+|:------|:----|:----|
+| 类/函数**声明**中的类型参数 | `<T>` / `<T,R:Rling/std/Any;>` | 裸名；若有上界则用 `:` 跟 FQN 描述符 |
+| 描述符中的具体类型**实参** | 完整描述符（`I`、`Rling/std/Any;`…） | 与普通类型描述符相同 |
+| 描述符中的**类型参数变量**（未实化） | 裸名（`T`、`E`…） | 不加 `R...;` 包装 |
+
+#### 示例
+
+| 示例                                      | 含义                            |
+|:----------------------------------------|:-------------------------------|
+| `Rling/std/Any;`                        | `ling.std.Any`                 |
+| `Rling/std/Array<I>;`                   | `ling.std.Array<Int>`          |
+| `Rling/std/Array<Rling/std/Any;>;`      | `ling.std.Array<Any>`          |
+| `Rling/std/Array<T>;`                   | `ling.std.Array<T>`（T 为类型参数） |
+| `Rsqrt/second/平方喵;`                    | `sqrt.second.平方喵`              |
+| `R->;`                                  | 函数类型占位                        |
+
+根类 `lspled.lang.Any`（在 LingSpled 标准库中为 `ling.std.Any`）是所有类的最终父类；  
+其在字节码父类字段中以哨兵字符串 `"Any"` 表示（不使用 FQN），虚方法查找遇到 `"Any"` 时终止。
+
+### 函数 FQN
+
+```
+<rootPackage>.<subPackage>#functionName<TypeParams>(<paramDescs>)<returnDesc>
+```
+
+- 包路径各段之间用 `.` 分隔（与类 FQN 的 `/` 不同）
+- `#` 分隔包路径与函数名
+- `<TypeParams>` 为泛型参数约束列表（无泛型时为空 `<>` 或省略）
+- 括号内为参数描述符序列，括号后为返回类型描述符
+
+| 示例                                              | 含义                                   |
+|:------------------------------------------------|:-------------------------------------|
+| `ling.std#println<>(Rling/std/Any;)V`           | `ling.std.println(Any): Unit`        |
+| `ling.std#println<>(IRling/std/Array<I>;)V`     | `ling.std.println(Int, Array<Int>): Unit` |
 
 ### 常量池 String 条目示例
 

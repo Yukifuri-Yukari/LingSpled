@@ -1,38 +1,32 @@
 package yukifuri.lang.lingspled.compiler.lexer
 
-import yukifuri.lang.lingspled.compiler.ast.util.Operator
-import yukifuri.lang.lingspled.compiler.diagnostics.DiagnosticLevel
-import yukifuri.lang.lingspled.compiler.diagnostics.Diagnostics
-import yukifuri.lang.lingspled.compiler.exception.CompilationException
+import yukifuri.lang.lingspled.compiler.util.Operator
+import yukifuri.lang.lingspled.compiler.exception.Diagnostics
+import yukifuri.lang.lingspled.compiler.exception.InvalidCharacterException
 import yukifuri.lang.lingspled.compiler.lexer.token.Token
 import yukifuri.lang.lingspled.compiler.lexer.token.TokenStream
 import yukifuri.lang.lingspled.compiler.lexer.token.TokenType
-import yukifuri.libs.compilation.lex.IdentifierLexer
 import yukifuri.libs.compilation.lex.NumberLexer
 import yukifuri.libs.compilation.stream.CharStream
 import yukifuri.libs.compilation.util.Verification
 
+typealias Position = Pair<Int, Int>
+
 class Lexer(
-    private var cs: CharStream,
-    private var diagnostics: Diagnostics
+    private val diagnostics: Diagnostics
 ) {
     companion object {
         val keywords = setOf(
-            "package", "import", "fun",
-            "if", "else", "for", "while", "return", "when", "break", "continue", "defer", "is", "in", "as",
-            "var", "val",
-
-            "private", "public", "protected",
-            "static", "final", "abstract", "open", "override", "native",
-
-            "class", "interface", "annotation", "this", "super", "constructor", "sealed",
-            "null"
+            "as", "break", "class", "continue", "do", "else", "for", "fun",
+            "if", "import", "in", "interface", "is", "null", "object", "package",
+            "return", "super", "this", "throw", "try", "typealias", "val", "var",
+            "when", "while", "static", "final", "const"
         )
 
         val operators: List<String> = run {
             val s1 = mutableListOf<String>()
-            for (op in Operator.entries) {
-                if (op.lexical) s1.add(op.symbol)
+            for (op in Operator.entries - Operator.nonsymbolic) {
+                s1.add(op.symbol)
             }
             s1
         }.sortedByDescending { it.length }
@@ -55,16 +49,16 @@ class Lexer(
         const val COMMENTS_AS_TOKEN = false
     }
 
+    private var cs: CharStream = CharStream("")
     private val tokens = mutableListOf<Token>()
     var ts = TokenStream(tokens)
 
     private fun diagnostic(
-        message: String, extra: String = "",
-        level: DiagnosticLevel = DiagnosticLevel.Error,
-        row: Int = cs.row, col: Int = cs.col, throws: Boolean = false
+        info: String, detail: String = "",
+        start: Position = cs.row to cs.col, end: Position = start,
+        sidenote: String = "",
     ) {
-        diagnostics.add(message, level, extra, row, col)
-        if (throws) throw CompilationException(message)
+        diagnostics.add(info, detail, start, end, sidenote)
     }
 
     private fun skipWhitespace(): Boolean {
@@ -129,11 +123,10 @@ class Lexer(
         val number = NumberLexer.tryParseNumber(cs)
         if (number != null) {
             val type = if (number is Double || number is Float) TokenType.Decimal else TokenType.Integer
-            tokens.add(Token(number.toString(), type, row, col))
+            tokens.add(Token("$number${if (number is Float) "f" else ""}", type, row, col))
         }
     }
 
-    private fun isIdentStart(c: Char) = c.isLetter() || c == '_'
     private fun isIdentPart(c: Char) = c.isLetterOrDigit() || c == '_'
 
     private fun lexIdAndKeywords() {
@@ -145,7 +138,7 @@ class Lexer(
             sb.append(cs.next())
         val s = sb.toString()
         if (s.isEmpty()) {
-            diagnostic("Illegal Identifier", throws = true)
+            diagnostic("Illegal Identifier")
             return
         }
 
@@ -156,6 +149,31 @@ class Lexer(
         }
     }
 
+    private fun lexBacktickIdentifier() {
+        val row = cs.row
+        val col = cs.col
+
+        cs.next() // consume starting '`'
+        val sb = StringBuilder()
+        while (cs.hasNext()) {
+            val ch = cs.next()
+            if (ch in setOf('\\'))
+                diagnostic("Illegal character in backtick identifier")
+            if (ch == '`') {
+                // end
+                val s = sb.toString()
+                if (s.isEmpty()) {
+                    diagnostic("Illegal Identifier")
+                    return
+                }
+                tokens.add(Token(s, TokenType.Identifier, row, col))
+                return
+            }
+            sb.append(ch)
+        }
+        diagnostic("Unterminated backtick identifier", start = row to col, end = cs.row to cs.col)
+    }
+
     private fun escapeChar(c: Char) = when (c) {
         'n' -> '\n'
         't' -> '\t'
@@ -164,7 +182,7 @@ class Lexer(
         '"' -> '"'
         '0' -> '\u0000'
         else -> {
-            diagnostic("Unknown escape sequence: \\$c", level = DiagnosticLevel.Warning)
+            diagnostic("Unknown escape sequence: \\$c")
             c
         }
     }
@@ -196,7 +214,7 @@ class Lexer(
                         cs.next()
                         if (cs.hasNext() && cs.peek() == '"') {
                             cs.next() // consume closing """
-                            tokens.add(Token(sb.toString(), TokenType.String, row, col))
+                            tokens.add(Token("\"$sb\"", TokenType.String, row, col))
                             return
                         }
                         sb.append("\"\"")
@@ -212,22 +230,22 @@ class Lexer(
                     sb.append(ch)
                 }
             }
-            diagnostic("Unterminated multiline string", row = row, col = col)
+            diagnostic("Unterminated multiline string", start = row to col, end = cs.row to cs.col)
         } else {
             // empty string shortcut: next char is already '"'
             if (cs.hasNext() && cs.peek() == '"') {
                 cs.next()
-                tokens.add(Token("", TokenType.String, row, col))
+                tokens.add(Token("\"\"", TokenType.String, row, col))
                 return
             }
             while (cs.hasNext()) {
                 val ch = cs.next()
                 if (ch == '"') {
-                    tokens.add(Token(sb.toString(), TokenType.String, row, col))
+                    tokens.add(Token("\"$sb\"", TokenType.String, row, col))
                     return
                 }
                 if (ch == '\n') {
-                    diagnostic("Unterminated string", row = row, col = col)
+                    diagnostic("Unterminated string", start = row to col, end = cs.row to cs.col)
                     return
                 }
                 if (ch == '\\' && cs.hasNext()) {
@@ -236,7 +254,7 @@ class Lexer(
                     sb.append(ch)
                 }
             }
-            diagnostic("Unterminated string", row = row, col = col)
+            diagnostic("Unterminated string", start = row to col)
         }
     }
 
@@ -260,7 +278,9 @@ class Lexer(
         if (c in simpleTokens) {
             cs.next()
             tokens.add(Token(c.toString(), simpleTokens[c]!!, row, col))
+            return
         }
+        throw InvalidCharacterException(c)
     }
 
     fun lex(): Lexer {
@@ -272,6 +292,7 @@ class Lexer(
             when {
                 c in Verification.numbers -> lexNumbers()
                 c.isLetter() -> lexIdAndKeywords()
+                c == '`' -> lexBacktickIdentifier()
                 c == '"' -> lexString()
                 else -> lexSimpleTokens()
             }
@@ -280,9 +301,9 @@ class Lexer(
         return this
     }
 
-    fun reset(cs: CharStream, diagnostics: Diagnostics) {
+    fun reset(cs: CharStream): Lexer {
         tokens.clear()
         this.cs = cs
-        this.diagnostics = diagnostics
+        return this
     }
 }

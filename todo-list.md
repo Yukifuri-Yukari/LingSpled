@@ -7,58 +7,74 @@
 
 ## 编译器流水线
 
-| 状态 | 优先级 | 功能                              | 备注                                                     |
-|----|-----|---------------------------------|--------------------------------------------------------|
-| ✅  | —   | Lexer                           | 关键字、字符串、数字、运算符、嵌套块注释；`is`/`in`/`as`/`..` 已加入           |
-| ✅  | —   | Parser → AST                    | 优先级爬升、所有子解析器；`when`/`as`/`is`/`in` 表达式已接入              |
-| ✅  | —   | HirGenerator（AST → Untyped HIR） | 运算符脱糖、lambda captures 分析；`LHWhen` 保留结构不展开，支持 switch 特化 |
-| ✅  | —   | SymbolCollector（Pass 1）         | 收集类/函数/变量符号；preloadWildcard 默认导入 `lspled.lang.*`       |
-| 🔄 | 🔴  | TypeInferrer（Pass 2，HM 推断）      | 基础完成；`LHWhen` 分支类型推断已实现；泛型方法、sealed class 穷举检查待补       |
-| ✅  | —   | SemanticAnalysis（Pass 3）        | SymbolTable.Visitor：未解析引用、const 赋值、字段/方法存在性检查          |
-| ⬜  | 🔴  | Codegen（Typed HIR → 字节码）        | `Bytecodes.kt` 指令集已定义；`LHWhen` 可特化为 `lookupswitch`     |
-| ⬜  | 🔴  | VM / 字节码解释器                     | 带 RTTI；替换现有基于 AST 的 Walker                             |
+| 状态 | 优先级 | 功能                              | 备注                                                                                                                                                                                                                                   |
+|----|-----|---------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| ✅  | —   | Lexer                           | 关键字、字符串、数字、运算符、嵌套块注释；`is`/`in`/`as`/`..` 已加入                                                                                                                                                                                         |
+| 🔄 | 🔴  | Parser → AST                    | ExpressionParser ✅（Pratt，全运算符/字面量/调用链）；TopLevelParser ✅（class/fun/val/var/package/import）；ModuleParser 基本完成（声明/return/表达式语句，**控制流语句未实现**）；ClassParser ✅（主/次构造器、继承列表、where、成员分发）；待补：init 块、嵌套类、getter/setter、interface/object/enum 声明 |
+| ⬜  | 🔴  | FST（Formatted Syntax Tree）      | 语法级脱糖/规范化层，后续语义 pass 的输入：赋值 `LABinaryExpr` 拆分、Lambda 提取、节点复制展开（如主构造器 `val/var` 参数 → 属性）等                                                                                                                                              |
+| ⬜  | 🔴  | SymbolCollection                | 符号收集，基于 FST                                                                                                                                                                                                                          |
+| ⬜  | 🔴  | TypeInference（HM 推断）            | 基于 FST + 符号表                                                                                                                                                                                                                         |
+| ⬜  | 🔴  | SemanticAnalysis                | 语义检查                                                                                                                                                                                                                                 |
+| ⬜  | 🔴  | HIR                             | 带类型的高层 IR；语义级降级（属性初始化合成 `<init>`、控制流归一等）                                                                                                                                                                                              |
+| ⬜  | 🔴  | MIR（Bytecode MIR & Native MIR）  | 双后端中层 IR；`Bytecodes.kt` 指令集已定义；`when` 可特化为 `lookupswitch`                                                                                                                                                                            |
+| ⬜  | 🔴  | LIR                             | 低层 IR，面向目标的寄存器/栈布局                                                                                                                                                                                                                   |
+| ⬜  | 🔴  | Target                          | 字节码目标：VM / 解释器（带 RTTI）；native 目标待定                                                                                                                                                                                                   |
 
 ---
 
 ## 语言特性
 
+> ⚠️ 下列状态中提到 Walker / 旧 HIR 的条目为 Pratt 重构前的记录，旧实现已删除；"Parser 已支持"指新 Pratt 前端，语义/后端均待 HIR 重建后对接。
+
 ### 控制流
 
-| 状态 | 优先级 | 特性                                            | 备注                                                                         |
-|----|-----|-----------------------------------------------|----------------------------------------------------------------------------|
-| ✅  | 🔴  | `when` 表达式                                    | Parser/Walker/HIR/TypeInferrer 全流水线完成；支持 subject、`is` 解构、guard `if`、`else` |
-| ⬜  | 🔴  | `try` / `catch` / `finally`                   | 异常处理；Walker 已有信号机制可参考                                                      |
-| 🔄 | 🔴  | `is` / `!is` 类型检查                             | `is` 已实现（Parser + Walker + HIR）；`!is` HIR 已脱糖为 `is(...).not()`，Walker 待验证  |
-| 🔄 | 🔴  | `as` / `as?` 类型转换                             | `as` 已实现（Parser AsExpr，Walker 透传）；`as?` 未实现                                |
-| ⬜  | 🟡  | `?.` 安全调用                                     | 可空类型（`?`）已有，运算符未接入                                                         |
-| ⬜  | 🟡  | `?:` Elvis 运算符                                | 依赖 `?.`                                                                    |
-| ⬜  | 🟡  | `!!` 非空断言                                     |                                                                            |
-| 🔄 | 🟡  | 区间 `1..10` / `1 until 10` / `downTo` / `step` | `..` 运算符已加入 Lexer/Operator，Walker 有 `LRange`；`until`/`downTo`/`step` 未实现   |
-| 🔄 | 🟡  | `in` / `!in` 运算符                              | `in` 已实现（Parser + Walker + HIR）；`!in` HIR 已脱糖为 `in(...).not()`，Walker 待验证 |
+| 状态 | 优先级 | 特性                                            | 备注                                                                       |
+|----|-----|-----------------------------------------------|--------------------------------------------------------------------------|
+| ⬜  | 🔴  | `if` / `while` / `for` 语句                     | 新 Parser 待重建（ModuleParser 中已留注释占位），AST 节点也需在新结构中重建                       |
+| ⬜  | 🔴  | `when` 表达式                                    | 旧全流水线实现已随重构移除；新 Parser 未重建                                               |
+| ⬜  | 🔴  | `try` / `catch` / `finally`                   | 异常处理                                                                     |
+| 🔄 | 🔴  | `is` / `!is` 类型检查                             | 新 ExpressionParser 已支持解析（`!is` 两 token 前看）；HIR/后端待对接                     |
+| 🔄 | 🔴  | `as` / `as?` 类型转换                             | 新 ExpressionParser 已支持解析（含 `as?`）；HIR/后端待对接                              |
+| ⬜  | 🟡  | `?.` 安全调用                                     | 可空类型（`?`）已有，运算符未接入                                                       |
+| 🔄 | 🟡  | `?:` Elvis 运算符                                | 新 ExpressionParser 已支持解析（二元算符）；语义待实现                                     |
+| ⬜  | 🟡  | `!!` 非空断言                                     |                                                                          |
+| 🔄 | 🟡  | 区间 `1..10` / `1 until 10` / `downTo` / `step` | `..` 运算符已加入 Lexer/Operator，Walker 有 `LRange`；`until`/`downTo`/`step` 未实现 |
+| 🔄 | 🟡  | `in` / `!in` 运算符                              | 新 ExpressionParser 已支持解析（`!in` 两 token 前看）；HIR/后端待对接                     |
+
+### 基本类型编译时多态（Primitive Compile-time Polymorphism）
+
+| 状态 | 优先级 | 特性                  | 备注                                                                                                                                                                                                                                                                  |
+|----|-----|---------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| ⬜  | 🔴  | 基本类型（`Int` 等）的三态描述符 | 同一个 `Int` 在不同使用位置产生不同字节码表示：① lambda capture slot → `AtomicReference<I>`（装箱引用）；② 作为 receiver 调用实例方法 → 保留类型名 `Int`（虚方法分派）；③ 其他位置（参数/返回/局部变量）→ 原始描述符 `I`。当前 `fqDescriptorChar` 纯由 `LType` 名驱动，无使用位置信息，无法区分这三种情形，**实现时需在 codegen 层传入使用上下文（capture / receiver / value）** |
+
+---
 
 ### 类型系统 & OOP
 
-| 状态 | 优先级 | 特性                 | 备注                                                                   |
-|----|-----|--------------------|----------------------------------------------------------------------|
-| ⬜  | 🔴  | `interface`        | 含 default 方法；多实现                                                     |
-| ⬜  | 🔴  | `abstract class`   | 抽象方法不提供实现                                                            |
-| ⬜  | 🟡  | `sealed class`     | 配合 `when` 做穷举检查；子类必须同包                                               |
-| ⬜  | 🟡  | `data class`       | 自动生成 `equals` / `hashCode` / `toString` / `copy`；`componentN()` 供解构用 |
-| ⬜  | 🟡  | `object` 声明（单例）    | 顶层单例对象                                                               |
-| ⬜  | 🟡  | `enum class`       | 枚举；可带方法和属性                                                           |
-| ⬜  | 🟢  | `typealias`        | 类型别名                                                                 |
-| ⬜  | 🟢  | 型变注解 `in` / `out`  | 泛型协变/逆变；生产者-消费者模型                                                    |
-| ⬜  | 🟢  | `where` 多重上界       | `<T> where T : A, T : B`                                             |
+| 状态 | 优先级 | 特性                | 备注                                                                                         |
+|----|-----|-------------------|--------------------------------------------------------------------------------------------|
+| ✅  | —   | `class` 声明解析      | 主/次构造器（delegation）、继承列表（单超类+多接口）、泛型+where、属性、方法；仅 Parser 层                                 |
+| ⬜  | 🟡  | `init` 块          | ClassParser 报"暂不支持"；`LAClass` 需加 `initBlocks` 字段                                           |
+| ⬜  | 🟢  | 嵌套类               | ClassParser 报"暂不支持"；`LAClass` 需加 `nested` 字段                                               |
+| ⬜  | 🔴  | `interface`       | 含 default 方法；多实现                                                                           |
+| ⬜  | 🔴  | `abstract class`  | 抽象方法不提供实现                                                                                  |
+| ⬜  | 🟡  | `sealed class`    | 配合 `when` 做穷举检查；子类必须同包                                                                     |
+| ⬜  | 🟡  | `data class`      | Parser 已接受 `data` 修饰符；自动生成 `equals` / `hashCode` / `toString` / `copy`；`componentN()` 供解构用 |
+| ⬜  | 🟡  | `object` 声明（单例）   | 顶层单例对象                                                                                     |
+| ⬜  | 🟡  | `enum class`      | 枚举；可带方法和属性                                                                                 |
+| ⬜  | 🟢  | `typealias`       | 类型别名                                                                                       |
+| 🔄 | 🟢  | 型变注解 `in` / `out` | Parser 已支持（`parseTypeParams`）；泛型协变/逆变语义待实现                                                 |
+| 🔄 | 🟢  | `where` 多重上界      | Parser 已支持（`parseWhereClause` 合并多上界进类型参数）；后端待对接                                            |
 
 ### 函数 & Lambda
 
 | 状态 | 优先级 | 特性                   | 备注                   |
 |----|-----|----------------------|----------------------|
-| ✅  | —   | 默认参数值                | Parser + Walker 均已支持 |
-| ⬜  | 🟡  | 命名参数 `foo(x = 1)`    | 参数顺序无关调用             |
+| 🔄 | 🟡  | 默认参数值                | 新 Parser 仅主构造器参数支持默认值；函数参数（`parseParameter`）未支持 |
+| 🔄 | 🟡  | 命名参数 `foo(x = 1)`    | Parser 已支持（`parseArgument`）；语义待实现 |
 | ⬜  | 🟡  | `vararg`             | 变长参数；自动包装为数组         |
-| ⬜  | 🟡  | 扩展函数 `fun Foo.bar()` | 不修改类定义即可扩展；需调整符号查找   |
-| ⬜  | 🟡  | 中缀函数 `infix fun`     | `a foo b` 语法糖        |
+| 🔄 | 🟡  | 扩展函数 `fun Foo.bar()` | Parser 已支持 receiver 语法（`functionDecl`）；符号查找待实现 |
+| 🔄 | 🟡  | 中缀函数 `infix fun`     | Parser 已支持声明与 `a foo b` 调用解析；语义待实现 |
 | ⬜  | 🟢  | 尾递归优化 `tailrec`      | 将尾递归编译为循环            |
 
 ### 变量 & 属性
@@ -68,7 +84,7 @@
 | ⬜  | 🟡  | `lateinit var`          | 非空但延迟初始化；访问前未初始化抛异常  |
 | ⬜  | 🟡  | 解构声明 `val (a, b) = ...` | 依赖 `componentN()` 约定 |
 | ⬜  | 🟢  | 属性委托 `by lazy { }`      | `lazy` 作为标准库委托       |
-| ⬜  | 🟢  | 自定义 getter / setter     | `val x get() = ...`  |
+| ⬜  | 🟢  | 自定义 getter / setter     | `val x get() = ...`；`LAClassAttribute` 已预留字段，Parser 未实现 |
 
 ### 智能特性
 
@@ -83,7 +99,7 @@
 
 | 状态 | 优先级 | 功能                                          | 备注                                                                        |
 |----|-----|---------------------------------------------|---------------------------------------------------------------------------|
-| 🔄 | 🔴  | Native 函数机制                                 | Walker `handleNative` + `when(args[0])` 分发已实现；`System`/`PrintStream` 骨架已有 |
+| ⬜  | 🔴  | Native 函数机制                                 | 旧 Walker 实现已随重构移除；`native` 修饰符可解析；待基于新管线重建                           |
 | ⬜  | 🔴  | 基础集合：`List` / `Map` / `Set`                 | 可先实现不可变版本                                                                 |
 | ⬜  | 🔴  | 迭代器协议 `iterator()` / `hasNext()` / `next()` | `for (x in collection)` 的前提                                               |
 | ⬜  | 🟡  | 字符串标准方法                                     | `length`、`substring`、`contains`、`split` 等                                 |
@@ -98,5 +114,5 @@
 |----|-----|--------------|--------------------------------|
 | ⬜  | 🟡  | 错误诊断改进       | 当前 Diagnostics 已有；类型错误的位置信息需完善 |
 | ⬜  | 🟡  | 测试框架         | 用 `.ling` 文件做集成测试；断言预期输出       |
-| ⬜  | 🟢  | LSP / IDE 插件 | 语法高亮、补全；基于 HIR                 |
+| ⬜  | 🟢  | LSP / IDE 插件 | 语法高亮、补全；前置条件：AST 节点补 end position、Parser 错误恢复（`diagnostic` 目前直接 throw） |
 | ⬜  | 🟢  | REPL         | 交互式求值                          |
