@@ -45,5 +45,5 @@ bin/
 .DS_Store
 
 CLAUDE.md
-*.lsbc
 .claude
+versions/docs/Vibe-Coding-Recommendation.md

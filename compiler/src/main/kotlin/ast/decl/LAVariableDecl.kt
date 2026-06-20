@@ -16,6 +16,7 @@ open class LAVariableDecl(
     val name: String,
     val type: LTypeRef?,
     val init: LAExpression?,
+    val delegator: LAExpression?,
     override val position: Position
 ) : LAStatement(position) {
 
@@ -30,6 +31,7 @@ open class LAVariableDecl(
         append("name='$name'")
         if (type != null) append(", type=$type")
         if (init != null) append(", init=$init")
+        if (delegator != null) append(", delegator=$delegator")
         append(", position=$position")
         append(")")
     }

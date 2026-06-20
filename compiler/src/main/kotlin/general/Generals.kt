@@ -44,6 +44,7 @@ data class LTypeRef(
     val tp: List<LTypeReference> = emptyList(),
     val nullable: Boolean = false,
     val annotations: List<LAnnotation> = emptyList(),
+    val variance: Variance = Variance.Invariant,
 ) : LTypeReference() {
 
     companion object {

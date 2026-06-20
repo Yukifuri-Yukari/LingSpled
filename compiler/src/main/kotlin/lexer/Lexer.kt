@@ -17,7 +17,7 @@ class Lexer(
 ) {
     companion object {
         val keywords = setOf(
-            "as", "break", "class", "continue", "do", "else", "for", "fun",
+            "as", "break", "class", "continue", "else", "for", "fun",
             "if", "import", "in", "interface", "is", "null", "object", "package",
             "return", "super", "this", "throw", "try", "typealias", "val", "var",
             "when", "while", "static", "final", "const"

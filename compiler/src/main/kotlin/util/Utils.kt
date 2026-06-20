@@ -1,5 +1,6 @@
 package yukifuri.lang.lingspled.compiler.util
 
+import yukifuri.lang.lingspled.compiler.exception.ParsingException
 
 fun toInt(s: String): Int {
     return toLong(s).toInt()
@@ -11,17 +12,6 @@ fun toLong(s: String): Long {
         s.startsWith("0x") -> s.substring(2).toLong(16)
         else -> s.toLong()
     }
-}
-
-fun <A, B> Collection<B>.cast(): List<A> {
-    return this.cast { c, e ->
-        throw ClassCastException("Cannot cast elements of collection $c into given type. $e")
-    }
-}
-
-@Suppress("UNCHECKED_CAST")
-fun <A, B> Collection<B>.cast(failureAction: (Collection<B>, Throwable) -> Unit): List<A> {
-    return runCatching { map { it as A } }.onFailure { failureAction(this, it) }.getOrThrow()
 }
 
 object Modifiers {
@@ -52,7 +42,8 @@ object Modifiers {
         Open("open"),
         Final("final"),
         Inner("inner"),
-        Value("value");
+        Value("value"),
+        Native("native");
 
         companion object {
             val map = entries.associateBy { it.keyword }
@@ -89,4 +80,10 @@ object Modifiers {
     }
 
     val all: Map<String, ModifierType> = Class.map + Function.map + Property.map
+}
+
+fun <T : Modifiers.ModifierType> Collection<String>.resolve(
+    table: Map<String, T>, target: String
+): List<T> = map {
+    table[it] ?: throw ParsingException("Modifier '$it' is not applicable to $target")
 }

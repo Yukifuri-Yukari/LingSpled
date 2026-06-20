@@ -1,6 +1,15 @@
 package yukifuri.lang.lingspled.compiler.ast
 
 import yukifuri.lang.lingspled.compiler.ast.cls.LAClass
+import yukifuri.lang.lingspled.compiler.ast.control.LABreak
+import yukifuri.lang.lingspled.compiler.ast.control.LAContinue
+import yukifuri.lang.lingspled.compiler.ast.control.LADoWhile
+import yukifuri.lang.lingspled.compiler.ast.control.LAFor
+import yukifuri.lang.lingspled.compiler.ast.control.LAIf
+import yukifuri.lang.lingspled.compiler.ast.control.LALambda
+import yukifuri.lang.lingspled.compiler.ast.control.LAThrow
+import yukifuri.lang.lingspled.compiler.ast.control.LATry
+import yukifuri.lang.lingspled.compiler.ast.control.LAWhile
 import yukifuri.lang.lingspled.compiler.ast.decl.LAVariableDecl
 import yukifuri.lang.lingspled.compiler.ast.module.LAFile
 import yukifuri.lang.lingspled.compiler.ast.module.LAFunction
@@ -39,10 +48,15 @@ interface LAVisitor {
     fun varDecl(decl: LAVariableDecl)
     fun clsDecl(decl: LAClass)
 
-    /* fun ifStmt(stmt: LAIf)
+    fun ifExpr(expr: LAIf)
     fun whileStmt(stmt: LAWhile)
+    fun doWhileStmt(stmt: LADoWhile)
     fun forStmt(stmt: LAFor)
-    fun whenStmt(stmt: LAWhen) */
+    fun tryExpr(expr: LATry)
+    fun throwExpr(expr: LAThrow)
+    fun lambdaExpr(expr: LALambda)
+    fun breakStmt(stmt: LABreak)
+    fun continueStmt(stmt: LAContinue)
 
     fun literalExpr(expr: LALiteral<*>)
     fun fieldAccessExpr(expr: LAFieldAccessExpr)

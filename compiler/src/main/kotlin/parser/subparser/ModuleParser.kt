@@ -5,6 +5,11 @@ import yukifuri.lang.lingspled.compiler.ast.LAExprStatement
 import yukifuri.lang.lingspled.compiler.ast.LAParameter
 import yukifuri.lang.lingspled.compiler.ast.LAStatement
 import yukifuri.lang.lingspled.compiler.ast.cls.LAAnnotation
+import yukifuri.lang.lingspled.compiler.ast.control.LABreak
+import yukifuri.lang.lingspled.compiler.ast.control.LAContinue
+import yukifuri.lang.lingspled.compiler.ast.control.LADoWhile
+import yukifuri.lang.lingspled.compiler.ast.control.LAFor
+import yukifuri.lang.lingspled.compiler.ast.control.LAWhile
 import yukifuri.lang.lingspled.compiler.ast.decl.LAVariableDecl
 import yukifuri.lang.lingspled.compiler.ast.module.LAFunction
 import yukifuri.lang.lingspled.compiler.ast.module.LAModule
@@ -12,11 +17,12 @@ import yukifuri.lang.lingspled.compiler.general.LTypeRef
 import yukifuri.lang.lingspled.compiler.lexer.token.TokenType
 import yukifuri.lang.lingspled.compiler.parser.Parser
 import yukifuri.lang.lingspled.compiler.util.Modifiers
-import yukifuri.lang.lingspled.compiler.util.cast
+import yukifuri.lang.lingspled.compiler.util.resolve
 
 class ModuleParser(parent: Parser) : SubParser(parent) {
 
-    fun parse(): LAStatement {
+    // consumeEnd=false：解析单条语句但保留尾部换行（无括号控制流体用，把换行留给外层表达式当边界）
+    fun parse(consumeEnd: Boolean = true): LAStatement {
         skipWs()
         val annotations = parseAnnotations()
         skipWs()
@@ -27,18 +33,19 @@ class ModuleParser(parent: Parser) : SubParser(parent) {
                 val pos = keyword("return").position
                 val expr = expr.parse(inModule = true)
                 LAFunction.LAReturnStmt(expr, pos)
-            } /*
-            peek("if") -> ifStmt()
+            }
             peek("while") -> whileStmt()
+            peek("do") && peek(2).type == TokenType.LBrace -> doWhileStmt()
             peek("for") -> forStmt()
-            peek("when") -> whenStmt() */
+            peek("break") -> LABreak(keyword("break").position)
+            peek("continue") -> LAContinue(keyword("continue").position)
             else -> LAExprStatement(expr.parse(inModule = true))
-        }.also { skipStmtEnd() }
+        }.also { if (consumeEnd) skipStmtEnd() }
     }
 
     fun functionDecl(
         annotations: List<LAAnnotation> = listOf(),
-        modifiers: Pair<Modifiers.Access, List<Modifiers.ModifierType>> =
+        modifiers: Pair<Modifiers.Access, List<String>> =
             Modifiers.Access.Local to listOf()
     ): LAFunction {
         val pos = keyword("fun").position
@@ -73,10 +80,18 @@ class ModuleParser(parent: Parser) : SubParser(parent) {
 
         val resolvedTp = parseWhereClause(tp)
 
-        val body = if (peek(TokenType.LBrace)) parseBody() else null
+        val body = when {
+            peek(TokenType.LBrace) -> parseBody()
+            // 表达式体：fun f() = expr 脱糖为单条 return
+            peek("=", TokenType.Operator) -> {
+                val eq = next().position
+                LAModule(listOf(LAFunction.LAReturnStmt(expr.parse(inModule = true), eq)), eq)
+            }
+            else -> null
+        }
 
         return LAFunction(
-            annotations, modifiers.first, modifiers.second.cast(), 
+            annotations, modifiers.first, modifiers.second.resolve(Modifiers.Function.map, "function"),
             resolvedTp, receiver, name, params, ret, body, pos)
     }
 
@@ -108,7 +123,7 @@ class ModuleParser(parent: Parser) : SubParser(parent) {
 
     fun variableDecl(
         annotations: List<LAAnnotation> = listOf(),
-        modifiers: Pair<Modifiers.Access, List<Modifiers.ModifierType>> =
+        modifiers: Pair<Modifiers.Access, List<String>> =
             Modifiers.Access.Local to listOf()
     ): LAStatement {
         val pos = peek().position
@@ -118,11 +133,60 @@ class ModuleParser(parent: Parser) : SubParser(parent) {
             next()
             parseTypeRef()
         } else null
+
+        val delegator = if (peek("by")) {
+            next()
+            expr.parse(inModule = true)
+        } else null
+
         val init = if (peek("=", TokenType.Operator)) {
             next()
             expr.parse(inModule = true)
         } else null
-        return LAVariableDecl(annotations, modifiers.first, modifiers.second.cast(), mutable, name, type, init, pos)
+        return LAVariableDecl(
+            annotations, modifiers.first, modifiers.second.resolve(Modifiers.Property.map, "property"),
+            mutable, name, type, init, delegator, pos)
+    }
+
+    fun whileStmt(): LAWhile {
+        val pos = keyword("while").position
+        skipWs()
+        expect(TokenType.LParen)
+        val cond = expr.parse()
+        skipWs()
+        expect(TokenType.RParen)
+        return LAWhile(cond, parseBody(fallback = true), pos)
+    }
+
+    fun doWhileStmt(): LADoWhile {
+        val pos = next().position
+        val body = parseBody()
+        skipWs()
+        keyword("while")
+        skipWs()
+        expect(TokenType.LParen)
+        val cond = expr.parse()
+        skipWs()
+        expect(TokenType.RParen)
+        return LADoWhile(body, cond, pos)
+    }
+
+    fun forStmt(): LAFor {
+        val pos = keyword("for").position
+        skipWs()
+        expect(TokenType.LParen)
+        skipWs()
+        val variable = expectId().text
+        val type = if (peek(TokenType.Colon)) {
+            next()
+            parseTypeRef()
+        } else null
+        skipWs()
+        keyword("in")
+        val iterable = expr.parse()
+        skipWs()
+        expect(TokenType.RParen)
+        return LAFor(variable, type, iterable, parseBody(fallback = true), pos)
     }
 
     fun parseBody(fallback: Boolean = false): LAModule {
@@ -140,7 +204,8 @@ class ModuleParser(parent: Parser) : SubParser(parent) {
             if (!fallback)
                 diagnostic("Required a block with {} surrounding")
             val pos = peek().position
-            return LAModule(listOf(parse()), pos)
+            // 单语句体不吞尾部换行，留给外层 expr.parse 作语句边界
+            return LAModule(listOf(parse(consumeEnd = false)), pos)
         }
     }
 }

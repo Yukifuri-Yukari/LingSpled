@@ -1,7 +1,11 @@
 package yukifuri.lang.lingspled.compiler.module
 
 import yukifuri.lang.lingspled.compiler.exception.Diagnostics
+import yukifuri.lang.lingspled.compiler.ir.fst.FstGenerator
 import yukifuri.lang.lingspled.compiler.lexer.Lexer
+import yukifuri.lang.lingspled.compiler.symbol.ClassSymbol
+import yukifuri.lang.lingspled.compiler.symbol.SymbolCollector
+import yukifuri.lang.lingspled.compiler.symbol.SymbolProvider
 import yukifuri.lang.lingspled.compiler.parser.Parser
 import yukifuri.libs.compilation.stream.CharStream
 import java.io.File
@@ -54,13 +58,33 @@ class ModuleManager(
     fun compile() {
         val lexer = Lexer(diag)
         val parser = Parser(diag)
+        val fst = FstGenerator()
+        val provider = SymbolProvider()
+        val collector = SymbolCollector(provider, diag)
 
         for (file in files) {
+            diag.currentFile(file)
             val text = read(file)
 
             val tokens = lexer.reset(CharStream(text.joinToString("\n"))).lex().ts
             val ast = parser.parse(tokens).ast
-            println(ast)
+
+            val fst = fst.generate(ast)
+            println(fst)
+
+            collector.collect(fst)
+        }
+
+        println("=== symbols ===")
+        fun dumpMembers(cls: ClassSymbol, indent: String) {
+            cls.members.forEach { (name, members) ->
+                println("$indent.$name -> $members")
+                members.filterIsInstance<ClassSymbol>().forEach { dumpMembers(it, "$indent    ") }
+            }
+        }
+        for ((fqn, syms) in provider.symbols) {
+            println("$fqn -> $syms")
+            syms.filterIsInstance<ClassSymbol>().forEach { dumpMembers(it, "    ") }
         }
     }
 }

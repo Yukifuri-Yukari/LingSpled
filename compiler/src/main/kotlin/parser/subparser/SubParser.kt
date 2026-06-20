@@ -103,6 +103,7 @@ open class SubParser(val parent: Parser) {
         val name = expectId().text
         return LTypeDecl(name)
     }
+
     fun parseTypeRef(): LTypeRef {
         val name = expectId().text
         val tp = if (peek("<", TokenType.Operator)) {
@@ -110,7 +111,14 @@ open class SubParser(val parent: Parser) {
             val list = mutableListOf<LTypeReference>()
             do {
                 skipWs()
-                list.add(parseTypeRef())
+                val variance = when (peek().text) {
+                    "in" -> Variance.In.also { next() }
+                    "out" -> Variance.Out.also { next() }
+                    else -> Variance.Invariant
+                }
+                skipWs()
+                val arg = parseTypeRef()
+                list.add(if (variance == Variance.Invariant) arg else arg.copy(variance = variance))
                 skipWs()
             } while (tryConsume(TokenType.Comma))
             expect(TokenType.Operator, ">")
@@ -166,14 +174,14 @@ open class SubParser(val parent: Parser) {
         }
     }
 
-    fun parseModifiers(): Pair<Modifiers.Access, List<Modifiers.ModifierType>> {
-        val collected = mutableListOf<Modifiers.ModifierType>()
+    fun parseModifiers(): Pair<Modifiers.Access, List<String>> {
+        val collected = mutableListOf<String>()
         val set = Modifiers.all.keys + Modifiers.Access.map.keys
         val access = mutableListOf<Modifiers.Access>()
         while (hasNext() && peek().text in set) {
             val p = peek().text
             if (p in Modifiers.Access.map.keys) access.add(Modifiers.Access.map[p]!!)
-            else if (p in Modifiers.all.keys) collected.add(Modifiers.all[p]!!)
+            else collected.add(p)
             next()
         }
 
@@ -182,7 +190,7 @@ open class SubParser(val parent: Parser) {
 
         val duplicates = collected.groupBy { it }.filter { it.value.size > 1 }.keys
         if (duplicates.isNotEmpty())
-            throw ParsingException("Duplicate modifiers: ${duplicates.joinToString { it.keyword }}")
+            throw ParsingException("Duplicate modifiers: ${duplicates.joinToString()}")
 
         return (access.firstOrNull() ?: Modifiers.Access.Public) to collected
     }

@@ -26,6 +26,9 @@ data class LAClass(
     val ctors: List<LAClassConstructor>,
     val functions: List<LAFunction>,
     val attr: List<LAClassAttribute>,
+    val inits: List<LAInitBlock>,
+    val deinit: LADeinitBlock?,
+    val nested: List<LAClass>,
     override val position: Position
 ) : LAStatement(position) {
 
@@ -80,6 +83,38 @@ class LAClassConstructor(
     }
 }
 
+/**
+ * `init { }`——实例初始化块。lower 成 `<init>`，并入 `<constructor>` 体在字段赋值后执行。
+ * 一个类可有多个，按 [position] 归并保留源序。
+ */
+class LAInitBlock(
+    body: LAModule,
+    position: Position
+) : LAFunction(
+    emptyList(), Modifiers.Access.Local, emptyList(), emptyList(),
+    null, "<init>", emptyList(), LTypeRef.unit,
+    body, position
+) {
+
+    override fun toString() = "LAInitBlock(body=$body)"
+}
+
+/**
+ * `deinit { }`——析构前调用的块。lower 成 `<deinit>`，与 `<init>`/`<clinit>`/`<constructor>` 相对。
+ * 一个类至多一个。
+ */
+class LADeinitBlock(
+    body: LAModule,
+    position: Position
+) : LAFunction(
+    emptyList(), Modifiers.Access.Local, emptyList(), emptyList(),
+    null, "<deinit>", emptyList(), LTypeRef.unit,
+    body, position
+) {
+
+    override fun toString() = "LADeinitBlock(body=$body)"
+}
+
 class LAClassAttribute(
     annotations: List<LAAnnotation>,
     access: Modifiers.Access,
@@ -88,10 +123,11 @@ class LAClassAttribute(
     name: String,
     type: LTypeRef?,
     init: LAExpression?,
+    delegator: LAExpression?,
     val getter: LAFunction?,
     val setter: LAFunction?,
     position: Position
-) : LAVariableDecl(annotations, access, modifiers, mutable, name, type, init, position) {
+) : LAVariableDecl(annotations, access, modifiers, mutable, name, type, init, delegator, position) {
 
     override fun toString() = buildString {
         append("LAClassAttribute(")
@@ -102,6 +138,7 @@ class LAClassAttribute(
         append("name='$name'")
         if (type != null) append(", type=$type")
         if (init != null) append(", init=$init")
+        if (delegator != null) append(", delegator=$delegator")
         if (getter != null) append(", getter=$getter")
         if (setter != null) append(", setter=$setter")
         append(", position=$position")

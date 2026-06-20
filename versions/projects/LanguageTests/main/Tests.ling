@@ -10,6 +10,8 @@ val pi: Double = 3.14
 val flag = true
 var count: Int = 0
 var name: String
+val lazyPi: Double by lazy { computePi() }
+var observed: Int by Delegates.observable(0)
 
 public fun <T> Array<T>.first(): T {
     return this[0]
@@ -19,7 +21,7 @@ internal fun String?.orEmpty(): String {
     return this ?: ""
 }
 
-fun <A, B, C : Array<A>> complexTp() where B : I<B>, B : I2<B> {}
+fun <A, B, C : Array<out A>> complexTp() where B : I<B>, B : I2<B> {}
 
 public fun main(args: Array<String>) {
     println("Hello, World!")
@@ -39,6 +41,54 @@ public fun main(args: Array<String>) {
 
     val x = 1 + 2
     var msg: String = "hi"
+}
+
+public fun controlFlow(n: Int, items: Array<Int>): Int {
+    val sign = if (n > 0) 1 else if (n < 0) -1 else 0
+
+    if (n > 100) {
+        println("big")
+    } else if (n > 10) {
+        println("medium")
+    } else {
+        println("small")
+    }
+
+    var i = 0
+    while (i < n) {
+        if (i == 5) break
+        i++
+    }
+
+    do {
+        i--
+    } while (i > 0)
+
+    var sum = 0
+    for (x in items) {
+        if (x < 0) continue
+        sum += x
+    }
+    for (j: Int in items) {
+        sum += j
+    }
+
+    for (k in 0..n) {
+        sum += k
+    }
+    for (m in 0..<n) {
+        sum -= m
+    }
+
+    try {
+        if (sum < 0) throw RuntimeException("negative")
+    } catch (e: Exception) {
+        sum = 0
+    } finally {
+        println("done")
+    }
+
+    return sum + sign
 }
 
 class Empty
@@ -68,6 +118,8 @@ class Shape(val name: String) {
     fun describe(): String {
         return name
     }
+
+    static fun from(name: String) = Shape(name)
 }
 
 class NamedPoint(val x: Int, val y: Int) : Shape("point"), Comparable<NamedPoint> {
@@ -84,4 +136,71 @@ class Box<T : Any>(private val value: T) {
 
 class Token private constructor(val raw: String) {
     constructor() : this("")
+}
+
+class Config(source: Lookup) {
+    val host: String by source
+    var port: Int by Delegates.observable(8080)
+}
+
+class Temperature(var celsius: Double) {
+    // 只读属性 + 表达式体 getter（无幕后字段）
+    val fahrenheit: Double
+        get() = celsius * 9.0 / 5.0 + 32.0
+
+    // 读写属性 + getter/setter + field 幕后字段，顺序不限
+    var label: String = ""
+        get() = field
+        set(value) {
+            field = value
+        }
+
+    var quiet: Int = 0
+        set(value) { field = value }
+        get() = field
+}
+
+public fun lambdas(items: Array<Int>) {
+    // lambda 字面量：类型标注 / 显式多参 / 空 / 隐式 it
+    val double = { x: Int -> x * 2 }
+    val add = { a, b -> a + b }
+    val noop = { }
+    val toStr = { it.toString() }
+
+    // trailing lambda
+    items.forEach { println(it) }
+    val sum = items.fold(0) { acc, x -> acc + x }
+    run { println("trailing") }
+
+    // a(...) 换行后的 {} 不是 trailing：拆成 invoke 语句 + 独立 lambda 语句
+    println("done")
+    { println("standalone") }
+}
+
+class Resource(val path: String) {
+    val handle: Int
+
+    // 多个 init 块按源序执行
+    init {
+        handle = open(path)
+        println("opened")
+    }
+
+    init {
+        register(handle)
+    }
+
+    // 析构前调用，每类至多一个
+    deinit {
+        close(handle)
+    }
+
+    // 嵌套类
+    class Builder {
+        var path: String = ""
+
+        fun build(): Resource {
+            return Resource(path)
+        }
+    }
 }
