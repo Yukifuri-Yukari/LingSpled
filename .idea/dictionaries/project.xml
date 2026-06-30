@@ -5,9 +5,11 @@
       <w>Rclassname</w>
       <w>Spled</w>
       <w>Tailrec</w>
+      <w>Uninit</w>
       <w>lhtype</w>
       <w>lingspled</w>
       <w>lspled</w>
+      <w>nextln</w>
       <w>safepoints</w>
     </words>
   </dictionary>

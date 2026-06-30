@@ -3,7 +3,7 @@ package ling.std
 import ling.stream.PrintStream
 
 class Console {
-    val stdout = nativeInit("stdout") as PrintStream
+    static val stdout = nativeInit("stdout") as PrintStream
 
-    private native fun nativeInit(id: String): Any
+    private static native fun nativeInit(id: String): Any
 }

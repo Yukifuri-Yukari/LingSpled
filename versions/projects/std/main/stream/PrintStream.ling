@@ -8,7 +8,7 @@ abstract class PrintStream {
 
     abstract fun print(s: String)
 
-    fun nextln() {
+    protected fun nextln() {
         print("\n")
     }
 }

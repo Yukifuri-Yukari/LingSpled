@@ -1,4 +1,7 @@
-package yukifuri.lang.lingspled.compiler.general
+package yukifuri.lang.lingspled.compiler.util
+
+import yukifuri.lang.lingspled.compiler.symbol.Symbol
+import yukifuri.lang.lingspled.compiler.symbol.TypeParameterSymbol
 
 abstract class LExpression
 
@@ -24,6 +27,13 @@ enum class Variance {
     Out
 }
 
+enum class ClassKind {
+    Class,
+    Interface,
+    Annotation,
+    Enum,
+}
+
 sealed class LTypeDeclaration
 sealed class LTypeReference
 
@@ -37,7 +47,10 @@ data class LTypeParamDecl(
     val id: String,
     val variance: Variance = Variance.Invariant,
     val upbounds: List<LTypeReference> = listOf(LTypeRef.any),
-) : LTypeDeclaration()
+) : LTypeDeclaration() {
+    /** SymbolCollection / Resolution 阶段填入：本类型参数声明对应的符号。 */
+    var symbol: TypeParameterSymbol? = null
+}
 
 data class LTypeRef(
     val name: String,
@@ -46,6 +59,9 @@ data class LTypeRef(
     val annotations: List<LAnnotation> = emptyList(),
     val variance: Variance = Variance.Invariant,
 ) : LTypeReference() {
+
+    /** Resolution 遍（TYPES phase）填入：解析到的 ClassSymbol / TypeParameterSymbol。 */
+    var symbol: Symbol? = null
 
     companion object {
         val any = primitive("ling.std.Any")
@@ -70,6 +86,9 @@ data class LTypeParamRef(
     val name: String,
     val variance: Variance = Variance.Invariant,
     val nullable: Boolean = false,
-) : LTypeReference()
+) : LTypeReference() {
+    /** Resolution 阶段填入：解析到的 TypeParameterSymbol。 */
+    var symbol: TypeParameterSymbol? = null
+}
 
 object LTypeParamNone : LTypeReference()

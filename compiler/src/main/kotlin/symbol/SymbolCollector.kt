@@ -43,6 +43,8 @@ class SymbolCollector(
         val sym = FunctionSymbol(fn.name, fn)
         fn.symbol = sym
         registerTop(prefix + fn.name, sym, fn.position)
+        // 扩展函数（带 receiver 的顶层 fun）另入副索引，供成员/中缀调用按 receiver 类型解析。
+        if (fn.receiver != null) provider.registerExtension(fn.name, sym)
     }
 
     private fun collectTopProperty(v: LFVariableDecl, prefix: String) {
@@ -59,7 +61,11 @@ class SymbolCollector(
         if (enclosing == null) registerTop(fqn, sym, cls.position)
         else declareMember(enclosing, sym, cls.position)
 
-        for (tp in cls.tp) sym.declareMember(TypeParameterSymbol(tp.id))
+        for (tp in cls.tp) {
+            val tps = TypeParameterSymbol(tp.id, tp)
+            tp.symbol = tps
+            sym.declareMember(tps)
+        }
 
         for (attr in cls.attr) {
             val p = PropertySymbol(attr.name, attr.mutable, attr)
@@ -79,6 +85,8 @@ class SymbolCollector(
             sym.declareMember(f)
         }
         for (nested in cls.nested) collectClass(nested, prefix, enclosing = sym)
+        // enum 条目作为该 enum 类的成员（`Color.RED`）。匿名体成员暂不收集（留后续）。
+        for (entry in cls.entries) declareMember(sym, EnumEntrySymbol(entry.name, sym), entry.position)
     }
 
     private fun collectAccessor(owner: ClassSymbol, accessor: LFFunction?) {

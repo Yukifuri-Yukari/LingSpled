@@ -3,6 +3,7 @@ package yukifuri.lang.lingspled.compiler.parser.subparser
 import yukifuri.lang.lingspled.compiler.ast.LAArgument
 import yukifuri.lang.lingspled.compiler.ast.LABinaryExpr
 import yukifuri.lang.lingspled.compiler.ast.LABinaryExpr.BinaryOperator
+import yukifuri.lang.lingspled.compiler.ast.LAErrorStatement
 import yukifuri.lang.lingspled.compiler.ast.LAExpression
 import yukifuri.lang.lingspled.compiler.ast.LAFieldAccessExpr
 import yukifuri.lang.lingspled.compiler.ast.LAIndexAccessExpr
@@ -10,6 +11,7 @@ import yukifuri.lang.lingspled.compiler.ast.LAInvokeExpr
 import yukifuri.lang.lingspled.compiler.ast.LALiteral
 import yukifuri.lang.lingspled.compiler.ast.LAParameter
 import yukifuri.lang.lingspled.compiler.ast.LAStatement
+import yukifuri.lang.lingspled.compiler.ast.LAStringTemplate
 import yukifuri.lang.lingspled.compiler.ast.LAUnaryExpr
 import yukifuri.lang.lingspled.compiler.ast.control.LACatch
 import yukifuri.lang.lingspled.compiler.ast.control.LAIf
@@ -17,40 +19,71 @@ import yukifuri.lang.lingspled.compiler.ast.control.LALambda
 import yukifuri.lang.lingspled.compiler.ast.control.LAThrow
 import yukifuri.lang.lingspled.compiler.ast.control.LATry
 import yukifuri.lang.lingspled.compiler.ast.module.LAModule
-import yukifuri.lang.lingspled.compiler.general.LTypeRef
+import yukifuri.lang.lingspled.compiler.util.LTypeRef
 import yukifuri.lang.lingspled.compiler.exception.ParsingException
+import yukifuri.lang.lingspled.compiler.lexer.Lexer
+import yukifuri.lang.lingspled.compiler.lexer.Position
+import yukifuri.lang.lingspled.compiler.lexer.token.StrSeg
 import yukifuri.lang.lingspled.compiler.lexer.token.TokenType
 import yukifuri.lang.lingspled.compiler.parser.Parser
 import yukifuri.lang.lingspled.compiler.util.Operator
+import yukifuri.libs.compilation.stream.CharStream
 
 class ExpressionParser(parent: Parser) : SubParser(parent) {
 
     fun parse(minLbp: Int = 0, inModule: Boolean = false): LAExpression {
-        skipWs()
-        var left = nud()
-        while (true) {
-            if (!hasNext() || (inModule && peek(TokenType.NewLine))) break
-            val newline = peek(TokenType.NewLine) // skipWs 前左操作数后是否有换行
+        val errPos = peek().position
+        try {
             skipWs()
-            val op = peekBinaryOp() ?: break
-            // 中缀 identifier 调用不跨换行：`a\nb` 不是 `a infix b`（符号算符 isInfix=false，仍可跨行）
-            if (newline && op.isInfix) break
-            if (op.op.lbp <= minLbp) break
-            consumeOp(op)
-            left = led(left, op)
+            var left = nud(inModule)
+            while (true) {
+                if (!hasNext() || (inModule && peek(TokenType.NewLine))) break
+                val newline = peek(TokenType.NewLine) // skipWs 前左操作数后是否有换行
+                skipWs()
+                val op = peekBinaryOp() ?: break
+                // 中缀 identifier 调用不跨换行：`a\nb` 不是 `a infix b`（符号算符 isInfix=false，仍可跨行）
+                if (newline && op.isInfix) break
+                if (op.op.lbp <= minLbp) break
+                consumeOp(op)
+                left = led(left, op, inModule)
+            }
+            return left
+        } catch (_: Throwable) {
+            while (hasNext() && peek().type !in safepoints) next()
+            next()
         }
-        return left
+
+        return LAErrorStatement(errPos)
     }
 
-    private fun nud(): LAExpression {
+    /** 插值 String token 分段 → [LAStringTemplate]：字面段→字符串字面量，插值段→重 lex + parseExpression。 */
+    private fun buildTemplate(segs: List<StrSeg>, pos: Position): LAExpression =
+        LAStringTemplate(segs.map { seg ->
+            when (seg) {
+                is StrSeg.Lit -> LALiteral.LALString(seg.text, pos)
+                is StrSeg.Expr -> reparseInterp(seg.source)
+            }
+        }, pos)
+
+    /** 在插值表达式源码上临时跑一遍 Lexer，换上子 TokenStream 调 [parse]，再还原（Lexer 可随时复用）。
+     *  源码补尾换行：裸表达式 lex 后无尾部 token，否则 `primary` 链式访问 peek 会越界（NewLine 作前看缓冲）。 */
+    private fun reparseInterp(source: String): LAExpression {
+        val sub = Lexer(parent.diag).reset(CharStream("$source\n")).lex().ts
+        val saved = parent.ts
+        parent.ts = sub
+        return try { parse() } finally { parent.ts = saved }
+    }
+
+    private fun nud(inModule: Boolean = false): LAExpression {
         val p = peek()
         val node: LAExpression = when (p.type) {
             TokenType.BooleanLiteral ->
                 LALiteral.LABoolean(next().text.toBooleanStrict(), p.position)
 
             TokenType.String -> {
-                val raw = next().text
-                LALiteral.LALString(raw.substring(1, raw.length - 1), p.position)
+                val t = next()
+                t.template?.let { buildTemplate(it, p.position) }
+                    ?: LALiteral.LALString(t.text.substring(1, t.text.length - 1), p.position)
             }
 
             TokenType.Integer -> {
@@ -79,7 +112,7 @@ class ExpressionParser(parent: Parser) : SubParser(parent) {
                 "if" -> parseIf()
                 "try" -> parseTry()
                 "throw" -> {
-                    next(); LAThrow(parse(0), p.position)
+                    next(); LAThrow(parse(0, inModule), p.position)
                 }
 
                 else -> TODO("keyword '${p.text}' in expression")
@@ -106,7 +139,9 @@ class ExpressionParser(parent: Parser) : SubParser(parent) {
                 val op = Operator.from(p.text)
                 if (op.nud == 0) throw ParsingException("'${p.text}' not a prefix operator")
                 next()
-                val right = parse(op.nud)
+                // 透传 inModule：前缀算符的操作数（`val x = -a` / `!flag` / `throw e`）同样在换行处停住，
+                // 否则操作数 parse 吃掉语句边界换行，下一行裸名被误当中缀（中缀 identifier 隐患）。括号内 parse(0) 仍跨行。
+                val right = parse(op.nud, inModule)
                 LAUnaryExpr(op, right, prefix = true, p.position)
             }
 
@@ -114,10 +149,12 @@ class ExpressionParser(parent: Parser) : SubParser(parent) {
         }
         return primary(node)
     }
-    private fun led(left: LAExpression, op: BinaryOperator): LAExpression {
+    private fun led(left: LAExpression, op: BinaryOperator, inModule: Boolean = false): LAExpression {
         if (op.op.rbp == 0)
             return LAUnaryExpr(op.op, left, prefix = false, left.position)
-        val right = parse(op.op.rbp)
+        // 透传 inModule：语句级初始化器（如 `val t = n + 1`）的右操作数也要在换行处停住，
+        // 否则右操作数 parse 会 skipWs 吃掉作为语句边界的换行，下一行裸名被误当中缀算符（中缀 identifier 隐患）。
+        val right = parse(op.op.rbp, inModule)
         return LABinaryExpr(left, op, right, left.position)
     }
     /**

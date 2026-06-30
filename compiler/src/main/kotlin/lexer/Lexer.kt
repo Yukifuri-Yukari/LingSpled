@@ -3,6 +3,7 @@ package yukifuri.lang.lingspled.compiler.lexer
 import yukifuri.lang.lingspled.compiler.util.Operator
 import yukifuri.lang.lingspled.compiler.exception.Diagnostics
 import yukifuri.lang.lingspled.compiler.exception.InvalidCharacterException
+import yukifuri.lang.lingspled.compiler.lexer.token.StrSeg
 import yukifuri.lang.lingspled.compiler.lexer.token.Token
 import yukifuri.lang.lingspled.compiler.lexer.token.TokenStream
 import yukifuri.lang.lingspled.compiler.lexer.token.TokenType
@@ -204,19 +205,49 @@ class Lexer(
             }
         }
 
+        val segments = mutableListOf<StrSeg>()
         val sb = StringBuilder()
+        fun flushLit() { if (sb.isNotEmpty()) { segments.add(StrSeg.Lit(sb.toString())); sb.clear() } }
+        fun finish() {
+            flushLit()
+            if (segments.any { it is StrSeg.Expr }) { // 插值串：挂 template，text 仅作调试
+                val text = segments.joinToString("") { if (it is StrSeg.Lit) it.text else "\${}" }
+                tokens.add(Token("\"$text\"", TokenType.String, row, col, template = segments.toList()))
+            } else {
+                tokens.add(Token("\"${(segments.firstOrNull() as? StrSeg.Lit)?.text ?: ""}\"", TokenType.String, row, col))
+            }
+        }
+        // 遇 '$'：`${expr}` 或 `$ident` → 切出插值段（消费之）；否则当字面 '$'（返回 false 由外层处理）。
+        fun tryInterp(): Boolean {
+            val pr = cs.row; val pc = cs.col
+            val s = cs.snapshot()
+            cs.next() // consume '$'
+            if (!cs.hasNext()) { cs.restore(s); return false }
+            val n = cs.peek()
+            when {
+                n == '{' -> {
+                    cs.next(); flushLit()
+                    segments.add(StrSeg.Expr(scanBracedInterp(), pr to pc))
+                }
+                isIdentPart(n) && !n.isDigit() -> {
+                    flushLit()
+                    val id = StringBuilder()
+                    while (cs.hasNext() && isIdentPart(cs.peek())) id.append(cs.next())
+                    segments.add(StrSeg.Expr(id.toString(), pr to pc))
+                }
+                else -> { cs.restore(s); return false }
+            }
+            return true
+        }
 
         if (isMultiline) {
             while (cs.hasNext()) {
+                if (cs.peek() == '$' && tryInterp()) continue
                 if (cs.peek() == '"') {
                     cs.next()
                     if (cs.hasNext() && cs.peek() == '"') {
                         cs.next()
-                        if (cs.hasNext() && cs.peek() == '"') {
-                            cs.next() // consume closing """
-                            tokens.add(Token("\"$sb\"", TokenType.String, row, col))
-                            return
-                        }
+                        if (cs.hasNext() && cs.peek() == '"') { cs.next(); finish(); return }
                         sb.append("\"\"")
                     } else {
                         sb.append('"')
@@ -224,38 +255,45 @@ class Lexer(
                     continue
                 }
                 val ch = cs.next()
-                if (ch == '\\' && cs.hasNext()) {
-                    sb.append(escapeChar(cs.next()))
-                } else {
-                    sb.append(ch)
-                }
+                if (ch == '\\' && cs.hasNext()) sb.append(escapeChar(cs.next())) else sb.append(ch)
             }
             diagnostic("Unterminated multiline string", start = row to col, end = cs.row to cs.col)
         } else {
-            // empty string shortcut: next char is already '"'
-            if (cs.hasNext() && cs.peek() == '"') {
-                cs.next()
-                tokens.add(Token("\"\"", TokenType.String, row, col))
-                return
-            }
             while (cs.hasNext()) {
+                if (cs.peek() == '$' && tryInterp()) continue
                 val ch = cs.next()
-                if (ch == '"') {
-                    tokens.add(Token("\"$sb\"", TokenType.String, row, col))
-                    return
-                }
+                if (ch == '"') { finish(); return }
                 if (ch == '\n') {
                     diagnostic("Unterminated string", start = row to col, end = cs.row to cs.col)
                     return
                 }
-                if (ch == '\\' && cs.hasNext()) {
-                    sb.append(escapeChar(cs.next()))
-                } else {
-                    sb.append(ch)
-                }
+                if (ch == '\\' && cs.hasNext()) sb.append(escapeChar(cs.next())) else sb.append(ch)
             }
             diagnostic("Unterminated string", start = row to col)
         }
+    }
+
+    /** 已消费 `${` 后，配平大括号扫描插值表达式**原始源码**（跳过嵌套字符串），消费收尾 `}` 不计入。 */
+    private fun scanBracedInterp(): String {
+        val sb = StringBuilder()
+        var depth = 1
+        while (cs.hasNext()) {
+            val ch = cs.next()
+            when (ch) {
+                '{' -> { depth++; sb.append(ch) }
+                '}' -> { depth--; if (depth == 0) return sb.toString(); sb.append(ch) }
+                '"' -> { // 跳过嵌套字符串，免得里面的 '}' 提前收尾
+                    sb.append(ch)
+                    while (cs.hasNext()) {
+                        val c2 = cs.next(); sb.append(c2)
+                        if (c2 == '\\' && cs.hasNext()) sb.append(cs.next()) else if (c2 == '"') break
+                    }
+                }
+                else -> sb.append(ch)
+            }
+        }
+        diagnostic("Unterminated string interpolation", start = cs.row to cs.col)
+        return sb.toString()
     }
 
     private fun lexSimpleTokens() {
@@ -304,6 +342,7 @@ class Lexer(
     fun reset(cs: CharStream): Lexer {
         tokens.clear()
         this.cs = cs
+        ts.restore(0)
         return this
     }
 }

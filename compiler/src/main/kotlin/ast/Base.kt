@@ -13,8 +13,8 @@ import yukifuri.lang.lingspled.compiler.ast.control.LAWhile
 import yukifuri.lang.lingspled.compiler.ast.decl.LAVariableDecl
 import yukifuri.lang.lingspled.compiler.ast.module.LAFile
 import yukifuri.lang.lingspled.compiler.ast.module.LAFunction
-import yukifuri.lang.lingspled.compiler.general.LExpression
-import yukifuri.lang.lingspled.compiler.general.LTypeRef
+import yukifuri.lang.lingspled.compiler.util.LExpression
+import yukifuri.lang.lingspled.compiler.util.LTypeRef
 import yukifuri.lang.lingspled.compiler.lexer.Position
 
 abstract class LAExpression(open val position: Position) : LExpression() {
@@ -30,9 +30,18 @@ class LAExprStatement(val expr: LAExpression) : LAStatement(expr.position) {
     override fun toString() = expr.toString()
 }
 
+class LAErrorStatement(position: Position) : LAStatement(position) {
+
+    override fun toString() = "LAErrorStatement()"
+
+    override fun accept(visitor: LAVisitor) {}
+}
+
 data class LAParameter(
     val name: String,
-    val type: LTypeRef
+    val type: LTypeRef,
+    val vararg: Boolean = false,
+    val default: LAExpression? = null,
 )
 
 data class LAArgument(
@@ -59,6 +68,7 @@ interface LAVisitor {
     fun continueStmt(stmt: LAContinue)
 
     fun literalExpr(expr: LALiteral<*>)
+    fun stringTemplate(node: LAStringTemplate)
     fun fieldAccessExpr(expr: LAFieldAccessExpr)
     fun indexAccessExpr(expr: LAIndexAccessExpr)
     fun unaryExpr(expr: LAUnaryExpr)

@@ -1,0 +1,23 @@
+package ling.std
+
+fun println(text: String) {
+    Console.stdout.println(text)
+}
+
+fun println(obj: Any) {
+    Console.stdout.println(obj.toString())
+}
+
+fun print(text: String) {
+    Console.stdout.print(text)
+}
+
+fun print(obj: Any) {
+     Console.stdout.print(obj.toString())
+ }
+
+fun buildString(block: StringBuilder.() -> Unit): String {
+    val builder = StringBuilder()
+    builder.block()
+    return builder.toString()
+}

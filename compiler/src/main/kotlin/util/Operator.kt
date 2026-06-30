@@ -39,14 +39,14 @@ enum class Operator(
     SafeAs("as?", 60, 60, 0),
 
     // Comparison       (priority 8 -> lbp=50)
-    Less("<",       50, 50, 0),
-    Greater(">",    50, 50, 0),
-    LessEq("<=",    50, 50, 0),
-    GreaterEq(">=", 50, 50, 0),
+    Lt("<",       50, 50, 0),
+    Gt(">",    50, 50, 0),
+    Le("<=",    50, 50, 0),
+    Ge(">=", 50, 50, 0),
 
     // Equality         (priority 9 -> lbp=40)
     Eq("==",   40, 40, 0),
-    NotEq("!=", 40, 40, 0),
+    Ne("!=", 40, 40, 0),
 
     // Conjunction      (priority 10 -> lbp=30)
     And("&&", 30, 30, 0),

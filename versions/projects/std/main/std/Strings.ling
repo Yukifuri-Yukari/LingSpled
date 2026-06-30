@@ -6,7 +6,14 @@ class String(
 
     constructor(other: String) : this(other.arr)
 
+    val size get() = arr.size
+    val length get() = size
+
     operator fun plus(other: Any) = String(arr + other.toString().arr)
 
-    override fun toString() = arr.toString()
+    override fun toString() = arr.joinToString("")
+}
+
+class StringBuilder : IndexedCollection<Char> {
+    ...
 }

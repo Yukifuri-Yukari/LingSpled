@@ -1,6 +1,7 @@
 package yukifuri.lang.lingspled.compiler.parser.subparser
 
 import yukifuri.lang.lingspled.compiler.ast.LAArgument
+import yukifuri.lang.lingspled.compiler.ast.LAErrorStatement
 import yukifuri.lang.lingspled.compiler.ast.LAExprStatement
 import yukifuri.lang.lingspled.compiler.ast.LAParameter
 import yukifuri.lang.lingspled.compiler.ast.LAStatement
@@ -13,7 +14,7 @@ import yukifuri.lang.lingspled.compiler.ast.control.LAWhile
 import yukifuri.lang.lingspled.compiler.ast.decl.LAVariableDecl
 import yukifuri.lang.lingspled.compiler.ast.module.LAFunction
 import yukifuri.lang.lingspled.compiler.ast.module.LAModule
-import yukifuri.lang.lingspled.compiler.general.LTypeRef
+import yukifuri.lang.lingspled.compiler.util.LTypeRef
 import yukifuri.lang.lingspled.compiler.lexer.token.TokenType
 import yukifuri.lang.lingspled.compiler.parser.Parser
 import yukifuri.lang.lingspled.compiler.util.Modifiers
@@ -21,26 +22,34 @@ import yukifuri.lang.lingspled.compiler.util.resolve
 
 class ModuleParser(parent: Parser) : SubParser(parent) {
 
-    // consumeEnd=false：解析单条语句但保留尾部换行（无括号控制流体用，把换行留给外层表达式当边界）
     fun parse(consumeEnd: Boolean = true): LAStatement {
-        skipWs()
-        val annotations = parseAnnotations()
-        skipWs()
-        return when {
-            peek("fun") -> functionDecl(annotations)
-            peek("val") || peek("var") -> variableDecl(annotations)
-            peek("return") -> {
-                val pos = keyword("return").position
-                val expr = expr.parse(inModule = true)
-                LAFunction.LAReturnStmt(expr, pos)
-            }
-            peek("while") -> whileStmt()
-            peek("do") && peek(2).type == TokenType.LBrace -> doWhileStmt()
-            peek("for") -> forStmt()
-            peek("break") -> LABreak(keyword("break").position)
-            peek("continue") -> LAContinue(keyword("continue").position)
-            else -> LAExprStatement(expr.parse(inModule = true))
-        }.also { if (consumeEnd) skipStmtEnd() }
+        val errPos = peek().position
+        try {
+            skipWs()
+            val annotations = parseAnnotations()
+            skipWs()
+            return when {
+                peek("fun") -> functionDecl(annotations)
+                peek("val") || peek("var") -> variableDecl(annotations)
+                peek("return") -> {
+                    val pos = keyword("return").position
+                    val expr = expr.parse(inModule = true)
+                    LAFunction.LAReturnStmt(expr, pos)
+                }
+
+                peek("while") -> whileStmt()
+                peek("do") && peek(2).type == TokenType.LBrace -> doWhileStmt()
+                peek("for") -> forStmt()
+                peek("break") -> LABreak(keyword("break").position)
+                peek("continue") -> LAContinue(keyword("continue").position)
+                else -> LAExprStatement(expr.parse(inModule = true))
+            }.also { if (consumeEnd) skipStmtEnd() }
+        } catch (_: Throwable) {
+            while (hasNext() && peek().type !in safepoints) next()
+            next()
+        }
+
+        return LAErrorStatement(errPos)
     }
 
     fun functionDecl(
@@ -73,22 +82,26 @@ class ModuleParser(parent: Parser) : SubParser(parent) {
             TokenType.LParen, TokenType.RParen
         ) { parseParameter() }
 
-        val ret = if (peek(TokenType.Colon)) {
+        val explicitRet = if (peek(TokenType.Colon)) {
             next()
             parseTypeRef()
-        } else LTypeRef.unit
+        } else null
 
         val resolvedTp = parseWhereClause(tp)
 
+        val isExprBody = peek("=", TokenType.Operator)
+
         val body = when {
             peek(TokenType.LBrace) -> parseBody()
-            // 表达式体：fun f() = expr 脱糖为单条 return
-            peek("=", TokenType.Operator) -> {
+            // 表达式体：fun f() = expr 脱糖为单条 return；无显式返回类型时用 infer 占位
+            isExprBody -> {
                 val eq = next().position
                 LAModule(listOf(LAFunction.LAReturnStmt(expr.parse(inModule = true), eq)), eq)
             }
             else -> null
         }
+
+        val ret = explicitRet ?: if (isExprBody) LTypeRef.infer else LTypeRef.unit
 
         return LAFunction(
             annotations, modifiers.first, modifiers.second.resolve(Modifiers.Function.map, "function"),
@@ -96,10 +109,16 @@ class ModuleParser(parent: Parser) : SubParser(parent) {
     }
 
     fun parseParameter(): LAParameter {
+        skipWs()
+        val vararg = tryConsume(TokenType.Identifier, "vararg") // 软关键字，lex 成 Identifier
         val name = expectId().text
         expect(TokenType.Colon)
         val type = parseTypeRef()
-        return LAParameter(name, type)
+        val default = if (peek("=", TokenType.Operator)) {
+            next()
+            expr.parse(inModule = true)
+        } else null
+        return LAParameter(name, type, vararg, default)
     }
 
     fun parseArgument(): LAArgument {
@@ -194,8 +213,13 @@ class ModuleParser(parent: Parser) : SubParser(parent) {
             val pos = next().position
             val statements = mutableListOf<LAStatement>()
 
-            while (hasNext() && !peek(TokenType.RBrace))
+            // skipWs 必须在 RBrace 检查之前：语句末 skipStmtEnd 只吞一个换行，块内空行/多换行会让
+            // `!peek(RBrace)` 误为真 → parse() 落到 `}` 上 → nud 抛 TODO("unexpected token '}'")。
+            while (hasNext()) {
+                skipWs()
+                if (peek(TokenType.RBrace)) break
                 statements.add(parse())
+            }
 
             next()
 

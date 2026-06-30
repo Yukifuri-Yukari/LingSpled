@@ -133,3 +133,16 @@ data class LAInvokeExpr(
 
     override fun accept(visitor: LAVisitor) = visitor.invokeExpr(this)
 }
+
+/**
+ * 字符串插值模板：[parts] 是字面字符串（[LALiteral.LALString]）与插值表达式交替。
+ * 由 Parser 从带 [yukifuri.lang.lingspled.compiler.lexer.token.StrSeg] 的 String token 构建；
+ * FST 阶段脱糖为 `"" + part + part …` 的拼接（纯语法脱糖）。
+ */
+data class LAStringTemplate(
+    val parts: List<LAExpression>,
+    override val position: Position,
+) : LAExpression(position) {
+
+    override fun accept(visitor: LAVisitor) = visitor.stringTemplate(this)
+}

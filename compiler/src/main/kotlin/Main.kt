@@ -20,7 +20,7 @@ lateinit var moduleManager: ModuleManager
 fun main(args: Array<String>) {
     Bytecodes.generate()
 
-    val projectName = "LanguageTests"
+    val projectName = listOf("std", "LanguageTests")[1]
 
     moduleManager = ModuleManager(
         name = projectName,

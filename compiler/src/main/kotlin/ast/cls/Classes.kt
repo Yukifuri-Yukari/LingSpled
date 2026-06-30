@@ -9,8 +9,9 @@ import yukifuri.lang.lingspled.compiler.ast.LAVisitor
 import yukifuri.lang.lingspled.compiler.ast.decl.LAVariableDecl
 import yukifuri.lang.lingspled.compiler.ast.module.LAFunction
 import yukifuri.lang.lingspled.compiler.ast.module.LAModule
-import yukifuri.lang.lingspled.compiler.general.LTypeParamDecl
-import yukifuri.lang.lingspled.compiler.general.LTypeRef
+import yukifuri.lang.lingspled.compiler.util.ClassKind
+import yukifuri.lang.lingspled.compiler.util.LTypeParamDecl
+import yukifuri.lang.lingspled.compiler.util.LTypeRef
 import yukifuri.lang.lingspled.compiler.lexer.Position
 import yukifuri.lang.lingspled.compiler.util.Modifiers
 
@@ -18,6 +19,7 @@ data class LAClass(
     val annotations: List<LAAnnotation>,
     val access: Modifiers.Access,
     val modifiers: List<Modifiers.Class>,
+    val kind: ClassKind,
     val name: String,
     val tp: List<LTypeParamDecl>,
     val superclass: LAInvokeExpr,
@@ -29,11 +31,24 @@ data class LAClass(
     val inits: List<LAInitBlock>,
     val deinit: LADeinitBlock?,
     val nested: List<LAClass>,
+    val entries: List<LAEnumEntry>,
     override val position: Position
 ) : LAStatement(position) {
 
     override fun accept(visitor: LAVisitor) = visitor.clsDecl(this)
 }
+
+/**
+ * enum 条目：`NAME [ (args) ] [ { members } ]`。[args] 喂主构造器；[members] 是匿名体（覆写成员），无则空。
+ * 仅出现在 [ClassKind.Enum] 的 [LAClass.entries] 里。
+ */
+data class LAEnumEntry(
+    val annotations: List<LAAnnotation>,
+    val name: String,
+    val args: List<LAArgument>,
+    val members: List<LAStatement>,
+    val position: Position,
+)
 
 // class Foo private constructor(val x: Int, y: String = "")
 data class LAPrimaryConstructor(

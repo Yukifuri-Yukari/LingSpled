@@ -5,7 +5,7 @@ import yukifuri.lang.lingspled.compiler.ast.LAParameter
 import yukifuri.lang.lingspled.compiler.ast.LAStatement
 import yukifuri.lang.lingspled.compiler.ast.LAVisitor
 import yukifuri.lang.lingspled.compiler.ast.module.LAModule
-import yukifuri.lang.lingspled.compiler.general.LTypeRef
+import yukifuri.lang.lingspled.compiler.util.LTypeRef
 import yukifuri.lang.lingspled.compiler.lexer.Position
 
 /** `if (cond) then else elseBranch`——表达式。else-if 链脱糖为 elseBranch 内嵌套一个 [LAIf]。 */

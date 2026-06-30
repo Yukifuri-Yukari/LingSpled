@@ -1,5 +1,6 @@
 package yukifuri.lang.lingspled.compiler.parser.subparser
 
+import yukifuri.lang.lingspled.compiler.ast.LAErrorStatement
 import yukifuri.lang.lingspled.compiler.ast.LAFieldAccessExpr
 import yukifuri.lang.lingspled.compiler.ast.LAInvokeExpr
 import yukifuri.lang.lingspled.compiler.ast.LAParameter
@@ -11,11 +12,13 @@ import yukifuri.lang.lingspled.compiler.ast.cls.LAClassConstructor
 import yukifuri.lang.lingspled.compiler.ast.cls.LAClassConstructorParameter
 import yukifuri.lang.lingspled.compiler.ast.cls.LAConstructorDelegation
 import yukifuri.lang.lingspled.compiler.ast.cls.LADeinitBlock
+import yukifuri.lang.lingspled.compiler.ast.cls.LAEnumEntry
 import yukifuri.lang.lingspled.compiler.ast.cls.LAInitBlock
 import yukifuri.lang.lingspled.compiler.ast.cls.LAPrimaryConstructor
 import yukifuri.lang.lingspled.compiler.ast.module.LAFunction
 import yukifuri.lang.lingspled.compiler.ast.module.LAModule
-import yukifuri.lang.lingspled.compiler.general.LTypeRef
+import yukifuri.lang.lingspled.compiler.util.ClassKind
+import yukifuri.lang.lingspled.compiler.util.LTypeRef
 import yukifuri.lang.lingspled.compiler.lexer.Position
 import yukifuri.lang.lingspled.compiler.lexer.token.TokenType
 import yukifuri.lang.lingspled.compiler.parser.Parser
@@ -25,20 +28,30 @@ import yukifuri.lang.lingspled.compiler.util.resolve
 class ClassParser(parent: Parser) : SubParser(parent) {
 
     private fun parse(): LAStatement {
-        skipWs()
-        val annotations = parseAnnotations()
-        skipWs()
-        val modifiers = parseModifiers()
-        skipWs()
-        return when {
-            peek("fun") -> module.functionDecl(annotations, modifiers)
-            peek("val") || peek("var") -> attribute(annotations, modifiers)
-            peek("constructor") -> constructor(annotations, modifiers)
-            peek("init") -> initBlock(annotations, modifiers)
-            peek("deinit") -> deinitBlock(annotations, modifiers)
-            peek("class") -> cls(annotations, modifiers)
-            else -> diagnostic("Unexpected token in class body: \"${peek().text}\"")
-        }.also { skipStmtEnd() }
+        val errPos = peek().position
+
+        try {
+            skipWs()
+            val annotations = parseAnnotations()
+            skipWs()
+            val modifiers = parseModifiers()
+            skipWs()
+            return when {
+                peek("fun") -> module.functionDecl(annotations, modifiers)
+                peek("val") || peek("var") -> attribute(annotations, modifiers)
+                peek("constructor") -> constructor(annotations, modifiers)
+                peek("init") -> initBlock(annotations, modifiers)
+                peek("deinit") -> deinitBlock(annotations, modifiers)
+                peek("class") -> cls(annotations, modifiers)
+                peek("interface") -> cls(annotations, modifiers, ClassKind.Interface)
+                else -> diagnostic("Unexpected token in class body: \"${peek().text}\"")
+            }.also { skipStmtEnd() }
+        } catch (_: Throwable) {
+            while (hasNext() && peek().type !in safepoints) next()
+            next()
+        }
+
+        return LAErrorStatement(errPos)
     }
 
     private fun attribute(
@@ -177,9 +190,18 @@ class ClassParser(parent: Parser) : SubParser(parent) {
 
     fun cls(
         annotations: List<LAAnnotation>,
-        modifiers: Pair<Modifiers.Access, List<String>>
+        modifiers: Pair<Modifiers.Access, List<String>>,
+        kind: ClassKind = ClassKind.Class
     ): LAClass {
-        val pos = expect(TokenType.Keyword, "class").position
+        // interface/class 是关键字；annotation/enum 是软关键字（Identifier）+ 后随 class
+        val kind = when {
+            "enum" in modifiers.second -> ClassKind.Enum
+            "annotation" in modifiers.second -> ClassKind.Annotation
+            else -> kind
+        }
+        next()
+
+        val pos = safePos()
         val name = expectId().text
         val tp =
             if (peek("<", TokenType.Operator)) parseTypeParams()
@@ -199,9 +221,11 @@ class ClassParser(parent: Parser) : SubParser(parent) {
         val inits = mutableListOf<LAInitBlock>()
         var deinit: LADeinitBlock? = null
         val nested = mutableListOf<LAClass>()
+        val entries = mutableListOf<LAEnumEntry>()
 
         if (tryConsume(TokenType.LBrace)) {
             skipWs()
+            if (kind == ClassKind.Enum) parseEnumEntries(entries) // 条目在普通成员之前，以 ';' 分隔
             while (hasNext() && !peek(TokenType.RBrace)) {
                 when (val member = parse()) {
                     is LAClassConstructor -> ctors.add(member)
@@ -224,9 +248,43 @@ class ClassParser(parent: Parser) : SubParser(parent) {
 
         return LAClass(
             annotations, modifiers.first, modifiers.second.resolve(Modifiers.Class.map, "class"),
-            name, resolvedTp, supertypes.first, supertypes.second,
-            primary, ctors, functions, attrs, inits, deinit, nested, pos
+            kind, name, resolvedTp, supertypes.first, supertypes.second,
+            primary, ctors, functions, attrs, inits, deinit, nested, entries, pos
         )
+    }
+
+    // enum 条目：NAME [ (args) ] [ { members } ]，逗号分隔（支持尾随逗号），以 ';' 或 '}' 收尾
+    private fun parseEnumEntries(out: MutableList<LAEnumEntry>) {
+        while (hasNext() && !peek(TokenType.RBrace) && !peek(TokenType.Semicolon)) {
+            val annotations = parseAnnotations()
+            skipWs()
+            val pos = peek().position
+            val name = expectId().text
+            val args = if (peek(TokenType.LParen))
+                parseList(TokenType.LParen, TokenType.RParen) { module.parseArgument() } else emptyList()
+            skipWs()
+            val members = if (peek(TokenType.LBrace)) parseEntryBody() else emptyList()
+            out.add(LAEnumEntry(annotations, name, args, members, pos))
+            skipWs()
+            if (!tryConsume(TokenType.Comma)) break // 无逗号即条目列表结束（尾随逗号天然支持）
+            skipWs()
+        }
+        skipWs()
+        tryConsume(TokenType.Semicolon) // 条目与普通成员之间的分隔符
+        skipWs()
+    }
+
+    // enum 条目的匿名体 { members }，复用类成员分发
+    private fun parseEntryBody(): List<LAStatement> {
+        val members = mutableListOf<LAStatement>()
+        expect(TokenType.LBrace)
+        skipWs()
+        while (hasNext() && !peek(TokenType.RBrace)) {
+            members.add(parse())
+            skipWs()
+        }
+        expect(TokenType.RBrace)
+        return members
     }
 
     // (val x: Int) / constructor(...) / private constructor(...)；没有参数列表则返回 null

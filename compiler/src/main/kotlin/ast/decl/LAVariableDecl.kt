@@ -4,7 +4,7 @@ import yukifuri.lang.lingspled.compiler.ast.LAExpression
 import yukifuri.lang.lingspled.compiler.ast.LAStatement
 import yukifuri.lang.lingspled.compiler.ast.LAVisitor
 import yukifuri.lang.lingspled.compiler.ast.cls.LAAnnotation
-import yukifuri.lang.lingspled.compiler.general.LTypeRef
+import yukifuri.lang.lingspled.compiler.util.LTypeRef
 import yukifuri.lang.lingspled.compiler.lexer.Position
 import yukifuri.lang.lingspled.compiler.util.Modifiers
 

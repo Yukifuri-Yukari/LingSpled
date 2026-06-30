@@ -3,11 +3,11 @@ package yukifuri.lang.lingspled.compiler.parser.subparser
 import yukifuri.lang.lingspled.compiler.ast.cls.LAAnnotation
 import yukifuri.lang.lingspled.compiler.exception.EofException
 import yukifuri.lang.lingspled.compiler.exception.ParsingException
-import yukifuri.lang.lingspled.compiler.general.LTypeDecl
-import yukifuri.lang.lingspled.compiler.general.LTypeParamDecl
-import yukifuri.lang.lingspled.compiler.general.LTypeRef
-import yukifuri.lang.lingspled.compiler.general.LTypeReference
-import yukifuri.lang.lingspled.compiler.general.Variance
+import yukifuri.lang.lingspled.compiler.util.LTypeDecl
+import yukifuri.lang.lingspled.compiler.util.LTypeParamDecl
+import yukifuri.lang.lingspled.compiler.util.LTypeRef
+import yukifuri.lang.lingspled.compiler.util.LTypeReference
+import yukifuri.lang.lingspled.compiler.util.Variance
 import yukifuri.lang.lingspled.compiler.lexer.token.Token
 import yukifuri.lang.lingspled.compiler.lexer.token.TokenType
 import yukifuri.lang.lingspled.compiler.parser.Parser
@@ -216,9 +216,13 @@ open class SubParser(val parent: Parser) {
     ): List<T> {
         start?.let { expect(it) }
         val list = mutableListOf<T>()
-        while (hasNext() && !peek(terminator)) {
+        // skipWs 必须在 terminator 检查之前：否则尾随分隔符后的换行（`a,\n)`）会让 peek(terminator) 落空，
+        // 误把 terminator 当成下一个元素喂给 function() → expectId 撞 `)` 等。元素后同样先 skipWs 再判分隔符。
+        while (true) {
             skipWs()
+            if (!hasNext() || peek(terminator)) break
             list.add(function())
+            skipWs()
             if (!tryConsume(separator)) break
         }
         skipWs()

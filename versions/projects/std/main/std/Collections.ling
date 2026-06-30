@@ -1,0 +1,47 @@
+package ling.std
+
+interface Iterable<T> {
+
+    fun iterator(): Iterator<T>
+}
+
+interface Iterator<T> {
+
+    fun next(): T
+    fun hasNext(): Boolean
+}
+
+internal class SimpleIterator<T>(private val indexed: IndexedCollection<T>) : Iterator<T> {
+
+    private var index = 0
+
+    override fun next(): T {
+        return indexed[index++]
+    }
+
+    override fun hasNext(): Boolean {
+        return index < indexed.size
+    }
+}
+
+abstract class Collection<T> {
+
+    abstract val size: Int
+
+    abstract operator fun contains(element: T): Boolean
+    abstract fun containsAll(elements: Collection<T>): Boolean
+}
+
+abstract class IndexedCollection<T> : Collection<T>(), Iterable<T> {
+
+    abstract operator fun get(index: Int): T
+
+    fun joinToString(separator: String = ", ") = buildString {
+        for (i in 0 until size) {
+            if (i > 0) append(separator)
+            append(this@IndexedCollection[i])
+        }
+    }
+
+    override fun iterator(): Iterator<T> = SimpleIterator(this)
+}

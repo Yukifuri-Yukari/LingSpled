@@ -2,15 +2,19 @@ package yukifuri.lang.lingspled.compiler.ir.fst
 
 import yukifuri.lang.lingspled.compiler.ast.*
 import yukifuri.lang.lingspled.compiler.ast.LABinaryExpr.BinaryOperator
-import yukifuri.lang.lingspled.compiler.general.LTypeParamDecl
-import yukifuri.lang.lingspled.compiler.general.LTypeRef
+import yukifuri.lang.lingspled.compiler.util.ClassKind
+import yukifuri.lang.lingspled.compiler.util.LTypeParamDecl
+import yukifuri.lang.lingspled.compiler.util.LTypeRef
+import yukifuri.lang.lingspled.compiler.util.LTypeReference
 import yukifuri.lang.lingspled.compiler.lexer.Position
 import yukifuri.lang.lingspled.compiler.symbol.ClassSymbol
 import yukifuri.lang.lingspled.compiler.symbol.FunctionSymbol
 import yukifuri.lang.lingspled.compiler.symbol.ParameterSymbol
 import yukifuri.lang.lingspled.compiler.symbol.Symbol
+import yukifuri.lang.lingspled.compiler.type.LType
 import yukifuri.lang.lingspled.compiler.util.Modifiers
 import yukifuri.lang.lingspled.compiler.util.Operator
+import java.io.File
 
 /**
  * FST（Formatted Syntax Tree）——语法级脱糖/规范化层。
@@ -22,6 +26,12 @@ import yukifuri.lang.lingspled.compiler.util.Operator
  */
 
 sealed class LFExpression(open val position: Position) {
+    /**
+     * TypeInference 遍填入：综合出的语义类型（语句节点保持 null 或标 [LType.Unit]）。
+     * 命名为 `inferredType` 以避开 [LFVariableDecl]/[LFFor] 已有的语法类型字段 `type`（[LTypeRef]）。
+     */
+    var inferredType: LType? = null
+
     abstract fun accept(visitor: LFVisitor)
 }
 
@@ -33,7 +43,12 @@ class LFExprStatement(val expr: LFExpression) : LFStatement(expr.position) {
     override fun toString() = expr.toString()
 }
 
-data class LFParameter(val name: String, val type: LTypeRef) {
+data class LFParameter(
+    val name: String,
+    val type: LTypeReference,
+    val vararg: Boolean = false,
+    val default: LFExpression? = null,
+) {
     /** SymbolCollection 阶段填入。 */
     var symbol: ParameterSymbol? = null
 }
@@ -83,6 +98,9 @@ data class LFFieldAccessExpr(
     override val position: Position,
 ) : LFExpression(position) {
     override fun accept(visitor: LFVisitor) = visitor.fieldAccessExpr(this)
+
+    /** Resolution 遍填入：use → 绑定的 [Symbol]（变量/参数/局部/成员/顶层名）。 */
+    var symbol: Symbol? = null
 }
 
 data class LFIndexAccessExpr(
@@ -174,7 +192,7 @@ data class LFDoWhile(
 
 data class LFFor(
     val variable: String,
-    val type: LTypeRef?,
+    val type: LTypeReference?,
     val iterable: LFExpression,
     val body: LFModule,
     override val position: Position,
@@ -193,7 +211,7 @@ data class LFTry(
 
 data class LFCatch(
     val name: String,
-    val type: LTypeRef,
+    val type: LTypeReference,
     val body: LFModule,
     val position: Position,
 )
@@ -230,7 +248,10 @@ data class LFModule(
     }
 }
 
-object LFFile {
+data class LFFile(
+    val file: File,
+    val module: LFModule
+) {
     data class LFPackageDeclaration(
         val part: List<String>,
         override val position: Position,
@@ -255,10 +276,11 @@ open class LFFunction(
     val access: Modifiers.Access,
     val modifiers: List<Modifiers.Function>,
     val tp: List<LTypeParamDecl>,
-    val receiver: LTypeRef?,
+    val receiver: LTypeReference?,
     val name: String,
     val params: List<LFParameter>,
-    val ret: LTypeRef,
+    /** TypeInference 阶段回填：显式类型或从表达式体推断。 */
+    var ret: LTypeReference,
     val body: LFModule?,
     override val position: Position,
 ) : LFStatement(position) {
@@ -293,7 +315,7 @@ open class LFVariableDecl(
     val modifiers: List<Modifiers.Property>,
     val mutable: Boolean,
     val name: String,
-    val type: LTypeRef?,
+    val type: LTypeReference?,
     val init: LFExpression?,
     val delegator: LFExpression?,
     override val position: Position,
@@ -322,6 +344,7 @@ class LFClass(
     val annotations: List<LFAnnotation>,
     val access: Modifiers.Access,
     val modifiers: List<Modifiers.Class>,
+    val kind: ClassKind,
     val name: String,
     val tp: List<LTypeParamDecl>,
     val superclass: LFInvokeExpr,
@@ -333,6 +356,7 @@ class LFClass(
     val inits: List<LFInitBlock>,
     val deinit: LFDeinitBlock?,
     val nested: List<LFClass>,
+    val entries: List<LFEnumEntry>,
     override val position: Position,
 ) : LFStatement(position) {
     override fun accept(visitor: LFVisitor) = visitor.clsDecl(this)
@@ -345,6 +369,7 @@ class LFClass(
         if (annotations.isNotEmpty()) append("annotations=$annotations, ")
         if (access != Modifiers.Access.Local) append("access=$access, ")
         if (modifiers.isNotEmpty()) append("modifiers=$modifiers, ")
+        if (kind != ClassKind.Class) append("kind=$kind, ")
         append("name='$name'")
         if (tp.isNotEmpty()) append(", tp=$tp")
         append(", superclass=$superclass")
@@ -356,9 +381,19 @@ class LFClass(
         if (inits.isNotEmpty()) append(", inits=$inits")
         if (deinit != null) append(", deinit=$deinit")
         if (nested.isNotEmpty()) append(", nested=$nested")
+        if (entries.isNotEmpty()) append(", entries=$entries")
         append(")")
     }
 }
+
+/** enum 条目（FST）。[args] 喂主构造器，[members] 匿名体成员。见 AST 的 LAEnumEntry。 */
+data class LFEnumEntry(
+    val annotations: List<LFAnnotation>,
+    val name: String,
+    val args: List<LFArgument>,
+    val members: List<LFStatement>,
+    val position: Position,
+)
 
 data class LFPrimaryConstructor(
     val annotations: List<LFAnnotation>,
@@ -372,7 +407,7 @@ data class LFClassConstructorParameter(
     val access: Modifiers.Access,
     val mutable: Boolean?,
     val name: String,
-    val type: LTypeRef,
+    val type: LTypeReference,
     val default: LFExpression?,
     val position: Position,
 )
@@ -430,7 +465,7 @@ class LFClassAttribute(
     modifiers: List<Modifiers.Property>,
     mutable: Boolean,
     name: String,
-    type: LTypeRef?,
+    type: LTypeReference?,
     init: LFExpression?,
     delegator: LFExpression?,
     val getter: LFFunction?,

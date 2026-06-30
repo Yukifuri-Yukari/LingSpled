@@ -1,0 +1,225 @@
+package type.test
+
+// TypeInference 验证用例。注释里 => 标注期望的 LFExpression.type（看 `=== types ===` dump 核对）。
+// 上半部分（字面量/运算/局部/if·try/elvis/throw）是基础综合；下半部分（成员访问/调用/for·range/
+// 扩展/原始类型/enum/vararg/插值/lambda）覆盖本轮落地的依赖类型推断。
+
+fun literals(): Unit {
+    val i = 1          // => Int
+    val pi = 3.14      // => Double
+    val flag = true    // => Boolean
+    val s = "hi"       // => String
+    val n = null       // => Nothing?（无期望类型时取 NullLit）
+}
+
+fun operators(): Unit {
+    val a = 1 + 2 * 3      // => Int（算术取左操作数）
+    val cmp = a < 10       // => Boolean（比较）
+    val both = cmp && true // => Boolean（逻辑）
+    val neg = -a           // => Int（一元负同操作数）
+    val not = !both        // => Boolean（! → Boolean）
+}
+
+fun localRefs(): Unit {
+    val typed: Int = 5     // => Int（显式类型）
+    val inferred = 42      // => Int（init 推导）
+    val ref = typed        // => Int（裸名引用回查声明类型）
+    val ref2 = inferred    // => Int（裸名引用回查 init 推导类型）
+}
+
+fun params(a: Int, b: String): Int {
+    val x = a + 1          // => Int（参数引用 a => Int）
+    val y = b              // => String（参数引用）
+    return x
+}
+
+fun ifAsExpr(n: Int): Int {
+    val sign = if (n > 0) 1 else 2          // => Int（lub(Int, Int)）
+    val blk = if (n > 0) {                  // => Int（块作表达式取末位）
+        val t = n + 1
+        t
+    } else {
+        0
+    }
+    return sign + blk
+}
+
+fun elvis(s: String?): String {
+    return s ?: "default"  // => String（?: 去空）
+}
+
+fun tryAsExpr(n: Int): Int {
+    val r = try {          // => Int（try/catch 分支 lub）
+        n + 1
+    } catch (e: Exception) {
+        0
+    }
+    return r
+}
+
+fun throwsNothing(n: Int): Int {
+    val r = if (n < 0) {
+        throw RuntimeException("neg")  // => Nothing
+    } else {
+        n
+    }
+    return r
+}
+
+class Calc(val base: Int) {
+    fun addTo(n: Int): Int {
+        val r = base + n   // base 是隐式 receiver 成员的裸名引用 => Int（Resolution 已绑 PropertySymbol）
+        return r
+    }
+
+    fun memberAccess(other: Calc): Int {
+        return other.base  // => Int（a.b 成员访问：按 other 的类型查成员 base，补绑 symbol）
+    }
+}
+
+// 本轮新增：依赖类型的推断（成员/调用/for·range/扩展/原始/enum/vararg/插值/lambda）
+
+// 原始类型成员（经 receiverClass 桥到 ling.std.Int；用有显式返回类型的成员）
+fun primitiveMembers(i: Int) {
+    val str = i.toString()     // => String（Int.toString(): String）
+    val cmp = i.compareTo(5)   // => Int
+    val dot = 42.toString()
+    // 注：避免 `42.toString()` 这类字面量-点-方法——number lexer 可能把 `42.` 当小数
+}
+
+// String 是真类；拼接经左操作数规则恒 String
+fun strings(b: Int) {
+    val s = "hi"               // => String
+    val cat = "a" + b          // => String（+ 取左操作数 String）
+}
+
+// 调用与重载（println 有 String / Any 两个重载）
+fun callsAndOverload(n: Int) {
+    println("hi")              // => Unit（实参 String → println(String)）
+    println(n)                 // => Unit（Int 不可赋 String → 选 println(Any)）
+}
+
+// for / range / 迭代（继承链泛型替换：Array/IntRange 都 : IndexedCollection）
+fun forRangeIter(n: Int, arr: Array<Int>): Int {
+    var sum = 0
+    for (k in 0..n) { sum += k }    // k => Int（IntRange 元素类型）
+    for (m in 0..<n) { sum -= m }   // m => Int（rangeUntil）
+    for (x in arr) { sum += x }     // x => Int（Array<Int> 元素类型）
+    return sum
+}
+
+// 扩展函数（成员查不到 → 按 receiver 类型匹配扩展；this 绑 receiver）
+fun Int.double(): Int = this + this
+fun <T> Array<T>.firstItem(): T = this[0]
+internal infix fun Int.combine(other: Int): Int = this + other
+
+fun extensions(arr: Array<Int>, n: Int): Int {
+    val d = n.double()          // => Int（成员查不到 → 扩展 Int.double）
+    val f = arr.firstItem()     // => Int（泛型扩展 T → Int）
+    val c = 1 combine 2         // => Int（中缀扩展，空格分隔无 number-dot 问题）
+    return d + f + c
+}
+
+// lambda：显式参数类型 → 参数与体可推（不依赖期望函数类型）
+fun lambdaExplicit() {
+    val f = { x: Int -> x + 1 }            // x => Int（显式标注）；f => (Int) -> Int
+}
+
+// 字符串插值（脱糖为 "" + part + …，结果恒 String）
+fun interpolation(name: String, i: Int): String {
+    val greet = "hello $name!"             // => String
+    val calc = "sum = ${i + 1} done"       // => String（插值表达式 i+1 => Int）
+    return greet
+}
+
+// vararg（体内是 Array<E>；调用点 arity >= 固定参数数）
+fun sumAll(vararg xs: Int): Int {
+    return xs.size                         // xs => Array<Int>，.size => Int
+}
+fun varargUse(): Int = sumAll(1, 2, 3)     // => Int
+
+// enum（条目 => 该 enum 类型；带构造器的条目实参被推断）
+enum class Color { RED, GREEN, BLUE }
+enum class Planet(val mass: Int) { EARTH(5), MARS(6) }
+
+fun enumUse(): Color {
+    val c = Color.RED          // => Color
+    val p = Planet.EARTH       // => Planet
+    return c
+}
+
+// annotation class（声明不参与类型推断；可作 @注解 使用）
+annotation class Marker(val name: String = "")
+
+@Marker("demo")
+class Annotated(val x: Int)
+
+// ===== 新增：TypeInference 缺口补齐后的回归测试 =====
+
+// 算术运算符重载：Int/Float/Double 等原始类型走成员方法 plus/minus/times/div/rem
+fun arithmeticOverloads(): Unit {
+    val i = 1 + 2            // => Int
+    val f = 1.0f + 2.0f      // => Float
+    val d = 1.0 + 2.0        // => Double
+    val mixed = 1.0 + 2      // => Double（数值提升）
+    val promote = 1 + 1.0    // => Double（Int + Double 提升为 Double）
+}
+
+// 重载决议 most-specific：更具体的参数类型优先
+fun specificAny(x: Any): Unit {}
+fun specificAny(x: String): Unit {}
+
+fun mostSpecific(): Unit {
+    specificAny("hi")        // => Unit，应选中 String 版本（most-specific）
+}
+
+// 默认参数
+fun withDefault(prefix: String = "hello", suffix: String = "!"): String {
+    return prefix + suffix   // => String
+}
+
+fun defaultArgs(): Unit {
+    val a = withDefault()              // => String
+    val b = withDefault("hi")          // => String
+    val c = withDefault("hi", "?")     // => String
+}
+
+// 命名参数
+fun namedTarget(first: Int, second: String): String {
+    return second + first   // => String
+}
+
+fun namedArgs(): Unit {
+    val r = namedTarget(second = "x", first = 1)  // => String
+}
+
+// Smart cast：is 检查后缩窄类型
+class Item(val value: Int)
+
+fun smartIs(x: Any): Int {
+    return if (x is Item) {
+        x.value              // => Int（x 被缩窄为 Item）
+    } else {
+        0
+    }
+}
+
+// Smart cast：null 检查后去掉可空性
+fun smartNull(s: Item?): Int {
+    return if (s != null) {
+        s.value              // => Int（s 被缩窄为 Item）
+    } else {
+        0
+    }
+}
+
+// lambda 隐式 it：当前 Parser 尚不支持函数类型语法 `(Int) -> Int`，
+// 故暂用显式单参 lambda 作为等价基准；隐式 it 实现已就绪，待 Parser 支持函数类型后启用。
+fun implicitIt(): Unit {
+    val f = { x: Int -> x + 1 }   // x => Int；f => (Int) -> Int
+}
+
+// 泛型替换精度：跨继承链替换（IndexedCollection<T> -> Array<Int>）
+fun genericSubstPrecision(arr: Array<Int>): Unit {
+    val first = arr.firstItem()        // => Int（沿用旧测试，验证跨继承链替换仍正确）
+}

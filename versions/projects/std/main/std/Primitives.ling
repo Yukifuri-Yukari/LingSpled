@@ -1,0 +1,95 @@
+package ling.std
+
+private annotation class Primitive
+
+@Primitive
+native class Boolean {
+    native operator fun not(): Boolean
+    native infix fun and(other: Boolean): Boolean
+    native infix fun or(other: Boolean): Boolean
+
+    native fun toString(): String
+}
+
+@Primitive
+native class Byte {
+    native operator fun plus(other: Byte): Byte
+    native operator fun minus(other: Byte): Byte
+    native operator fun times(other: Byte): Byte
+    native operator fun div(other: Byte): Byte
+    native operator fun rem(other: Byte): Byte
+    native operator fun compareTo(other: Byte): Int
+
+    native fun toString(): String
+}
+
+@Primitive
+native class Char {
+    native operator fun compareTo(other: Char): Int
+    native fun code(): Int
+
+    native fun toString(): String
+}
+
+@Primitive
+native class Short {
+    native operator fun plus(other: Short): Short
+    native operator fun minus(other: Short): Short
+    native operator fun times(other: Short): Short
+    native operator fun div(other: Short): Short
+    native operator fun rem(other: Short): Short
+    native operator fun compareTo(other: Short): Int
+
+    native fun toString(): String
+}
+
+@Primitive
+native class Float {
+    native operator fun plus(other: Float): Float
+    native operator fun minus(other: Float): Float
+    native operator fun times(other: Float): Float
+    native operator fun div(other: Float): Float
+    native operator fun rem(other: Float): Float
+    native operator fun compareTo(other: Float): Int
+
+    native fun toString(): String
+}
+
+@Primitive
+native class Int {
+    native operator fun plus(other: Int): Int
+    native operator fun minus(other: Int): Int
+    native operator fun times(other: Int): Int
+    native operator fun div(other: Int): Int
+    native operator fun rem(other: Int): Int
+    native operator fun compareTo(other: Int): Int
+
+    native operator fun rangeTo(other: Int): IntRange
+    native operator fun rangeUntil(other: Int): IntRange
+
+    native fun toString(): String
+}
+
+@Primitive
+native class Double {
+    native operator fun plus(other: Double): Double
+    native operator fun minus(other: Double): Double
+    native operator fun times(other: Double): Double
+    native operator fun div(other: Double): Double
+    native operator fun rem(other: Double): Double
+    native operator fun compareTo(other: Double): Int
+
+    native fun toString(): String
+}
+
+@Primitive
+native class Long {
+    native operator fun plus(other: Long): Long
+    native operator fun minus(other: Long): Long
+    native operator fun times(other: Long): Long
+    native operator fun div(other: Long): Long
+    native operator fun rem(other: Long): Long
+    native operator fun compareTo(other: Long): Int
+
+    native fun toString(): String
+}

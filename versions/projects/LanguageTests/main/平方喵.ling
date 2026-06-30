@@ -38,11 +38,7 @@ fun main(arg: Array<String>) {
         平方喵
     )
 
-    println(
-        平方喵.pfm,
-        "和",
-        平方喵.lfd,
-    )
+    println("${平方喵.pfm}和${平方喵.lfd}",)
 
     val 颜文字 = "ovo"
 

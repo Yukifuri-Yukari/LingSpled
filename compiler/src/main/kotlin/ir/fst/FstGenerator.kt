@@ -10,6 +10,7 @@ import yukifuri.lang.lingspled.compiler.ast.LAInvokeExpr
 import yukifuri.lang.lingspled.compiler.ast.LALiteral
 import yukifuri.lang.lingspled.compiler.ast.LAParameter
 import yukifuri.lang.lingspled.compiler.ast.LAStatement
+import yukifuri.lang.lingspled.compiler.ast.LAStringTemplate
 import yukifuri.lang.lingspled.compiler.ast.LAUnaryExpr
 import yukifuri.lang.lingspled.compiler.ast.LAVisitor
 import yukifuri.lang.lingspled.compiler.ast.cls.LAAnnotation
@@ -19,6 +20,7 @@ import yukifuri.lang.lingspled.compiler.ast.cls.LAClassConstructor
 import yukifuri.lang.lingspled.compiler.ast.cls.LAClassConstructorParameter
 import yukifuri.lang.lingspled.compiler.ast.cls.LAConstructorDelegation
 import yukifuri.lang.lingspled.compiler.ast.cls.LADeinitBlock
+import yukifuri.lang.lingspled.compiler.ast.cls.LAEnumEntry
 import yukifuri.lang.lingspled.compiler.ast.cls.LAInitBlock
 import yukifuri.lang.lingspled.compiler.ast.cls.LAPrimaryConstructor
 import yukifuri.lang.lingspled.compiler.ast.control.LABreak
@@ -35,6 +37,10 @@ import yukifuri.lang.lingspled.compiler.ast.decl.LAVariableDecl
 import yukifuri.lang.lingspled.compiler.ast.module.LAFile
 import yukifuri.lang.lingspled.compiler.ast.module.LAFunction
 import yukifuri.lang.lingspled.compiler.ast.module.LAModule
+import yukifuri.lang.lingspled.compiler.util.LTypeParamDecl
+import yukifuri.lang.lingspled.compiler.util.LTypeReference
+import yukifuri.lang.lingspled.compiler.util.LTypeParamRef
+import yukifuri.lang.lingspled.compiler.util.LTypeRef
 import yukifuri.lang.lingspled.compiler.util.Operator
 
 /**
@@ -55,6 +61,10 @@ import yukifuri.lang.lingspled.compiler.util.Operator
 class FstGenerator : LAVisitor {
     private var result: LFExpression? = null
 
+    /** 类型参数作用域栈：进入 class/function/lambda 时 push，离开时 pop。
+     * lowering 类型引用时，若名字匹配栈中某层声明的类型参数，则替换为 [LTypeParamRef]。 */
+    private val typeParamStack = ArrayDeque<List<LTypeParamDecl>>()
+
     fun generate(module: LAModule): LFModule = lowerModule(module)
 
     private companion object {
@@ -71,6 +81,33 @@ class FstGenerator : LAVisitor {
 
     private fun lowerModule(m: LAModule): LFModule =
         LFModule(m.statements.map(::lowerStmt), m.position)
+
+    private fun lowerTypeRef(ref: LTypeRef): LTypeReference {
+        // 占位符单例直传：保持 === 身份，供 TypeInferencePass/ResolutionPass 的 identity 检查使用
+        if (ref === LTypeRef.any || ref === LTypeRef.unit || ref === LTypeRef.infer) return ref
+
+        val loweredArgs = ref.tp.map {
+            when (it) {
+                is LTypeRef -> lowerTypeRef(it)
+                else -> it
+            }
+        }
+        val base = if (loweredArgs == ref.tp) ref else ref.copy(tp = loweredArgs)
+        if (base.tp.isNotEmpty()) return base
+        for (layer in typeParamStack.reversed()) {
+            layer.find { it.id == base.name }?.let {
+                return LTypeParamRef(it.id, base.variance, base.nullable)
+            }
+        }
+        return base
+    }
+
+    private inline fun <R> withTypeParams(tp: List<LTypeParamDecl>, block: () -> R): R {
+        typeParamStack.addLast(tp)
+        val r = block()
+        typeParamStack.removeLast()
+        return r
+    }
 
     private fun lowerStmt(s: LAStatement): LFStatement {
         val lowered = lowerExpr(s)
@@ -100,7 +137,7 @@ class FstGenerator : LAVisitor {
     override fun varDecl(decl: LAVariableDecl) {
         result = LFVariableDecl(
             decl.annotations.map(::lowerAnno), decl.access, decl.modifiers, decl.mutable, decl.name,
-            decl.type, decl.init?.let(::lowerExpr), decl.delegator?.let(::lowerExpr), decl.position,
+            decl.type?.let(::lowerTypeRef), decl.init?.let(::lowerExpr), decl.delegator?.let(::lowerExpr), decl.position,
         )
     }
 
@@ -128,7 +165,7 @@ class FstGenerator : LAVisitor {
     // for 保持结构化（LFFor），到 HIR（类型推断后）再按实例类型降级——见 forStmt 设计注记
     override fun forStmt(stmt: LAFor) {
         val iterable = lowerExpr(stmt.iterable)
-        result = LFFor(stmt.variable, stmt.type, iterable, lowerModule(stmt.body), stmt.position)
+        result = LFFor(stmt.variable, stmt.type?.let(::lowerTypeRef), iterable, lowerModule(stmt.body), stmt.position)
     }
 
     override fun tryExpr(expr: LATry) {
@@ -166,6 +203,14 @@ class FstGenerator : LAVisitor {
             is LALiteral.LALString -> LFLiteral.LFLString(expr.value, expr.position)
             is LALiteral.LAThis -> LFLiteral.LFThis(expr.position)
         }
+    }
+
+    // 字符串插值脱糖：`"a${x}b"` → `"" + "a" + x + "b"`（纯语法脱糖，结果恒为 String）
+    override fun stringTemplate(node: LAStringTemplate) {
+        var acc: LFExpression = LFLiteral.LFLString("", node.position)
+        for (part in node.parts)
+            acc = LFBinaryExpr(acc, BinaryOperator.op(Operator.Plus), lowerExpr(part), node.position)
+        result = acc
     }
 
     override fun fieldAccessExpr(expr: LAFieldAccessExpr) {
@@ -221,7 +266,7 @@ class FstGenerator : LAVisitor {
         result = LFFunction.LFReturnStmt(lowerExpr(stmt.expr), stmt.position)
     }
 
-    private fun lowerClass(c: LAClass): LFClass {
+    private fun lowerClass(c: LAClass): LFClass = withTypeParams(c.tp) {
         // 主构造器属性合成：val/var 参数 → LFClassAttribute（无初值，赋值注入归 HIR）
         val synthesized = c.primaryCtor?.params.orEmpty()
             .filter { it.mutable != null }
@@ -232,7 +277,7 @@ class FstGenerator : LAVisitor {
                     modifiers = emptyList(),
                     mutable = p.mutable!!,
                     name = p.name,
-                    type = p.type,
+                    type = lowerTypeRef(p.type),
                     init = null,
                     delegator = null,
                     getter = null,
@@ -242,14 +287,15 @@ class FstGenerator : LAVisitor {
                 )
             }
 
-        return LFClass(
+        LFClass(
             annotations = c.annotations.map(::lowerAnno),
             access = c.access,
             modifiers = c.modifiers,
+            kind = c.kind,
             name = c.name,
             tp = c.tp,
             superclass = lowerInvoke(c.superclass),
-            interfaces = c.interfaces,
+            interfaces = c.interfaces.map { lowerTypeRef(it) as LTypeRef },
             primaryCtor = c.primaryCtor?.let(::lowerPrimaryCtor),
             ctors = c.ctors.map(::lowerCtor),
             functions = c.functions.map(::lowerFunction),
@@ -257,16 +303,21 @@ class FstGenerator : LAVisitor {
             inits = c.inits.map(::lowerInit),
             deinit = c.deinit?.let(::lowerDeinit),
             nested = c.nested.map(::lowerClass),
+            entries = c.entries.map(::lowerEnumEntry),
             position = c.position,
         )
     }
+
+    private fun lowerEnumEntry(e: LAEnumEntry): LFEnumEntry = LFEnumEntry(
+        e.annotations.map(::lowerAnno), e.name, e.args.map(::lowerArg), e.members.map(::lowerStmt), e.position,
+    )
 
     private fun lowerPrimaryCtor(pc: LAPrimaryConstructor): LFPrimaryConstructor =
         LFPrimaryConstructor(pc.annotations.map(::lowerAnno), pc.access, pc.params.map(::lowerCtorParam), pc.position)
 
     private fun lowerCtorParam(p: LAClassConstructorParameter): LFClassConstructorParameter =
         LFClassConstructorParameter(
-            p.annotations.map(::lowerAnno), p.access, p.mutable, p.name, p.type,
+            p.annotations.map(::lowerAnno), p.access, p.mutable, p.name, lowerTypeRef(p.type),
             p.default?.let(::lowerExpr), p.position,
         )
 
@@ -287,7 +338,7 @@ class FstGenerator : LAVisitor {
             modifiers = a.modifiers,
             mutable = a.mutable,
             name = a.name,
-            type = a.type,
+            type = a.type?.let(::lowerTypeRef),
             init = a.init?.let(::lowerExpr),
             delegator = a.delegator?.let(::lowerExpr),
             getter = a.getter?.let(::lowerFunction),
@@ -301,17 +352,20 @@ class FstGenerator : LAVisitor {
         is LAConstructorDelegation.Super -> LFConstructorDelegation.Super(d.args.map(::lowerArg))
     }
 
-    private fun lowerFunction(f: LAFunction): LFFunction =
+    private fun lowerFunction(f: LAFunction): LFFunction = withTypeParams(f.tp) {
         LFFunction(
-            f.annotations.map(::lowerAnno), f.access, f.modifiers, f.tp, f.receiver,
-            f.name, f.params.map(::lowerParam), f.ret, f.body?.let(::lowerModule), f.position,
+            f.annotations.map(::lowerAnno), f.access, f.modifiers, f.tp,
+            f.receiver?.let(::lowerTypeRef),
+            f.name, f.params.map(::lowerParam), lowerTypeRef(f.ret),
+            f.body?.let(::lowerModule), f.position,
         )
+    }
 
-    private fun lowerParam(p: LAParameter): LFParameter = LFParameter(p.name, p.type)
+    private fun lowerParam(p: LAParameter): LFParameter = LFParameter(p.name, lowerTypeRef(p.type), p.vararg, p.default?.let(::lowerExpr))
 
     private fun lowerArg(a: LAArgument): LFArgument = LFArgument(a.name, lowerExpr(a.value))
 
     private fun lowerAnno(a: LAAnnotation): LFAnnotation = LFAnnotation(a.name, a.args.map(::lowerArg))
 
-    private fun lowerCatch(c: LACatch): LFCatch = LFCatch(c.name, c.type, lowerModule(c.body), c.position)
+    private fun lowerCatch(c: LACatch): LFCatch = LFCatch(c.name, lowerTypeRef(c.type), lowerModule(c.body), c.position)
 }

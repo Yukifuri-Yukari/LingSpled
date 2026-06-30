@@ -1,0 +1,7 @@
+package ling.std
+
+open class Throwable(val message: String = "")
+
+open class Exception(message: String = "") : Throwable(message)
+
+open class RuntimeException(message: String = "") : Exception(message)

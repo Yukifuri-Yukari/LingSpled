@@ -34,10 +34,10 @@ object Modifiers {
 
     enum class Class(override val keyword: String) : ModifierType {
         Abstract("abstract"),
-        Interface("interface"),
-        Annotation("annotation"),
+        // interface 是带专属分发的类描述符, 无需 modifiers
         Enum("enum"),
         Data("data"),
+        Annotation("annotation"),
         Sealed("sealed"),
         Open("open"),
         Final("final"),
@@ -72,7 +72,9 @@ object Modifiers {
         Lateinit("lateinit"),
         Volatile("volatile"),
         Static("static"),
-        Const("const");
+        Const("const"),
+        Abstract("abstract"),
+        Override("override");
 
         companion object {
             val map = entries.associateBy { it.keyword }
