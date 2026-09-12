@@ -1,0 +1,33 @@
+package language.test
+
+const val a = 0
+public sealed class A
+class Channel() {}
+
+class B {
+    static final channel = Channel()
+
+    constructor(a: Any) {}
+
+    init {
+        val a = N()
+    }
+
+    public static val a = 1
+
+    fun a() {}
+
+    operator fun add(other: Any): A { return A() }
+}
+
+public fun main(): Unit {
+    //
+    for (i in range(3)) {
+        break
+        continue
+        a++
+        val a = a ?: break
+        val b = a + a ?: if (a
+        + 2 == 1) a else continue
+    }
+}

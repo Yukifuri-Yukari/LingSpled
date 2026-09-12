@@ -1,14 +1,14 @@
 package yukifuri.lang.lingspled.compiler.exception
 
-open class CompilationException(message: String) : RuntimeException(message)
+open class CompilationException(
+    message: String,
+    stage: String,
+) : RuntimeException("Uncaught exception thrown at stage $stage: $message")
 
-class EofException : CompilationException("Unexpected EOF reached")
+class LexemeException(
+    message: String
+) : CompilationException(message, "Lexeme")
 
-class InvalidCharacterException(c: Char) : CompilationException("Unrecognized character: $c")
-
-class ParsingException(message: String) : CompilationException("Parse failed with message: $message")
-
-class TypeInferenceException(
-    a: String, b: String,
-    info: String = "Inference failed between"
-) : CompilationException("$info: $a vs $b")
+class ParserException(
+    message: String
+) : CompilationException(message, "Parser")
