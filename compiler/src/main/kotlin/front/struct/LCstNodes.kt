@@ -26,6 +26,8 @@ interface LCVisitor {
     fun exprIndex(index: LCExprIndex)
     fun exprMemberAccess(access: LCExprMemberAccess)
     fun exprVarGet(get: LCExprVariableGet)
+    fun exprStmt(stmt: LCExprStatement)
+    fun module(module: LCModule)
 }
 
 /**
@@ -34,8 +36,22 @@ interface LCVisitor {
  * Qn = {id "."} id;
  * ```
  */
-data class LQualifiedName(val parts: List<String>)
+data class LCConfirmedName(val parts: List<String>)
 
+enum class LParameterModifier(val sym: String) {
+    Val("val"),
+    Var("var"),
+    Vararg("vararg"),
+
+    ////////
+    Crossinline("crossinline"),
+    Noinline("noinline"),
+    ;
+
+    companion object {
+        fun from(sym: String): LParameterModifier? = entries.find { it.sym == sym }
+    }
+}
 data class LCArgument(
     val name: String?,
     val value: LCExpression,
@@ -43,32 +59,17 @@ data class LCArgument(
 )
 
 data class LCParameter(
-    val modifier: Modifier?,
+    val modifier: LParameterModifier?,
     val name: String,
-    val type: LCTypeReference,
+    val type: LTypeReference,
     val default: LCExpression?,
     val position: Position
-) {
-    enum class Modifier(val sym: String) {
-        Val("val"),
-        Var("var"),
-        Vararg("vararg"),
-
-        ////////
-        Crossinline("crossinline"),
-        Noinline("noinline"),
-        ;
-
-        companion object {
-            fun from(sym: String): Modifier? = entries.find { it.sym == sym }
-        }
-    }
-}
+)
 
 data class LCLambdaParameter(
-    val modifier: LCParameter.Modifier?,
+    val modifier: LParameterModifier?,
     val name: String,
-    val type: LCTypeReference?,
+    val type: LTypeReference?,
     val default: LCExpression?,
     val position: Position
 )
@@ -88,7 +89,7 @@ class LCExprStatement(
     val expr: LCExpression,
 ) : LCStatement(expr.position) {
 
-    override fun accept(visitor: LCVisitor) = expr.accept(visitor)
+    override fun accept(visitor: LCVisitor) = visitor.exprStmt(this)
 
     override fun toString() = expr.toString()
 }
@@ -107,7 +108,7 @@ data class LCParenGroup(
 
 data class LCExprAs(
     val recv: LCExpression,
-    val type: LCTypeRef,
+    val type: LTypeReference,
     val isSafe: Boolean,
 ) : LCExpression(recv.position) {
 
@@ -135,7 +136,8 @@ data class LCExprBinary(
 data class LCExprInvoke(
     val recv: LCExpression,
     val args: List<LCArgument>,
-    val lambda: LCLambda?
+    val lambda: LCLambda?,
+    val typeArgs: List<LTypeReference> = emptyList(),
 ) : LCStatement(recv.position) {
 
     override fun accept(visitor: LCVisitor) = visitor.exprInvoke(this)
@@ -186,7 +188,7 @@ class LCLambda(
 
 class LCVariableDecl(
     val name: String,
-    val type: LCTypeRef?,
+    val type: LTypeReference?,
     val init: LCExpression,
     val mutable: Boolean,
     val modifiers: List<Modifier>,
@@ -271,9 +273,11 @@ class LCCtrlContinue(
 class LCClass(
     val name: String,
     val modifiers: List<Modifier>,
-    val supers: List<LCTypeRef>,
+    val supers: List<LTypeRef>,
     val body: ClassBody,
-    position: Position
+    position: Position,
+    val typeParams: List<LTypeParameterDecl> = emptyList(),
+    val superConstructorArgs: List<List<LCExpression>> = emptyList(),
 ) : LCStatement(position){
 
     override fun accept(visitor: LCVisitor) {
@@ -292,10 +296,15 @@ class LCClass(
     )
 
     data class ClassBody(
-        val constructors: List<Constructor>,
-        val members: List<LCStatement>,
+        private val pConstructors: MutableList<Constructor>,
+        private val pMembers: MutableList<LCStatement>,
         val initBlock: InitBlock?
-    )
+    ) {
+        val constructors: List<Constructor> get() = pConstructors
+        val members: List<LCStatement> get() = pMembers
+
+        fun join(ctor: Constructor) = this.also { pConstructors.add(ctor) }
+    }
 
     data class InitBlock(
         val body: LCModule,
@@ -310,12 +319,12 @@ data class LCFile(
 ) {
 
     data class LCPackageDecl(
-        val fqn: LQualifiedName,
+        val fqn: LCConfirmedName,
         val pos: Position,
     )
 
     data class LCImportDecl(
-        val fqn: LQualifiedName,
+        val fqn: LCConfirmedName,
         val alias: String?,
         val wildcard: Boolean,
         val pos: Position,
@@ -327,7 +336,7 @@ open class LCModule(
     position: Position,
 ) : LCStatement(position) {
 
-    override fun accept(visitor: LCVisitor) = stmt.forEach { it.accept(visitor) }
+    override fun accept(visitor: LCVisitor) = visitor.module(this)
 
     override fun toString() = "LCModule(stmt=$stmt, position=$position)"
 
@@ -361,15 +370,16 @@ abstract class LCLiteral<T>(val value: T, position: Position) : LCExpression(pos
 class LCFunction(
     val name: String,
     val params: List<LCParameter>,
-    val ret: LCTypeReference,
-    val stmt: LCModule,
+    val ret: LTypeReference,
+    val module: LCModule,
     val modifiers: List<Modifier>,
-    position: Position
+    position: Position,
+    val typeParams: List<LTypeParameterDecl> = emptyList(),
 ) : LCStatement(position) {
 
     override fun accept(visitor: LCVisitor) = visitor.declFunc(this)
 
     override fun toString(): String {
-        return "LCFunction(name='$name', params=$params, ret=$ret, stmt=$stmt, modifiers=$modifiers)"
+        return "LCFunction(name='$name', params=$params, ret=$ret, stmt=$module, modifiers=$modifiers)"
     }
 }

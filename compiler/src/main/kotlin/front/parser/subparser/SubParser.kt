@@ -89,14 +89,14 @@ sealed class SubParser(val parent: Parser) {
         throw IllegalStateException()
     }
 
-    fun fqn(): LQualifiedName {
+    fun fqn(): LCConfirmedName {
         val fqn = mutableListOf(ident())
         while (hasNext() && peek(TokenType.Dot)) {
             if (peek(1).type != TokenType.Identifier) break
             next()
             fqn.add(ident())
         }
-        return LQualifiedName(fqn)
+        return LCConfirmedName(fqn)
     }
 
     fun keyword(value: String) = expect(TokenType.Keyword, value)
@@ -125,11 +125,11 @@ sealed class SubParser(val parent: Parser) {
         val modifier = if (peek(
                 null to "crossinline",
                 null to "noinline",
-                TokenType.Keyword to "val",
-                TokenType.Keyword to "var",
-                TokenType.Keyword to "vararg",
+                null to "val",
+                null to "var",
+                null to "vararg",
             )
-        ) LCParameter.Modifier.from(next().text) else null
+        ) LParameterModifier.from(next().text) else null
         val name = ident()
         expect(TokenType.Colon)
         val type = typeRef()
@@ -156,10 +156,166 @@ sealed class SubParser(val parent: Parser) {
         return LCArgument(name, expr, pos)
     }
 
-    fun typeRef(): LCTypeRef {
-        // lets dont consider too much, also mark it as todo: complex type ref (& def)
+    /**
+     * Parses a type reference, including nested generic and function types.
+     *
+     * Examples:
+     * `Type<A, Box<out B>>`, `*`, `(T1, T2) -> T3`, and `() -> T1`.
+     */
+    fun typeRef(): LTypeReference {
+        if (peek(TokenType.LParen)) {
+            next()
+            val params = mutableListOf<LTypeReference>()
+            if (!peek(TokenType.RParen)) {
+                while (true) {
+                    params.add(typeRef())
+                    if (peek(TokenType.Comma)) {
+                        next()
+                        continue
+                    }
+                    break
+                }
+            }
+            expect(TokenType.RParen)
+
+            if (hasNext() && peek(TokenType.Arrow)) {
+                next()
+                return LFunctionTypeRef(params, typeRef())
+            }
+
+            if (params.size == 1) return params.single()
+            diag("Expected '->' after a parenthesized type list", pos())
+            throw IllegalStateException()
+        }
+
+        if (peek(TokenType.Operator, "*")) {
+            next()
+            return LTypeParameterNone
+        }
+
         val name = ident()
-        return LCTypeRef(name)
+        val typeArgs = if (hasNext() && peek(TokenType.Operator, "<")) {
+            parseTypeArguments()
+        } else {
+            emptyList()
+        }
+        return LTypeRef(name, typeArgs, LVariance.None)
+    }
+
+    fun parseTypeArguments(): List<LTypeReference> {
+        expect(TokenType.Operator, "<")
+        val args = mutableListOf<LTypeReference>()
+
+        if (peek(TokenType.Operator, ">")) {
+            next()
+            return args
+        }
+
+        while (true) {
+            val variance = parseTypeVariance()
+            val type = typeRef()
+            args.add(applyTypeVariance(type, variance))
+
+            when {
+                peek(TokenType.Comma) -> {
+                    next()
+                    if (peek(TokenType.Operator, ">")) {
+                        diag("Trailing comma is not allowed in a type argument list", pos())
+                    }
+                }
+
+                peek(TokenType.Operator, ">") -> {
+                    next()
+                    break
+                }
+
+                else -> diag("Expected ',' or '>' in a type argument list", pos())
+            }
+        }
+
+        return args
+    }
+
+    private fun parseTypeVariance(): LVariance = when {
+        peek(null, "in") -> {
+            next()
+            LVariance.In
+        }
+
+        peek(null, "out") -> {
+            next()
+            LVariance.Out
+        }
+
+        else -> LVariance.None
+    }
+
+    private fun applyTypeVariance(type: LTypeReference, variance: LVariance): LTypeReference {
+        if (variance == LVariance.None) return type
+        return when (type) {
+            is LTypeRef -> type.copy(variance = variance)
+            is LTypeParameterRef -> type.copy(variance = variance)
+            LTypeParameterNone -> {
+                diag("A type variance cannot be applied to '*'", pos())
+                type
+            }
+            is LFunctionTypeRef -> {
+                diag("A type variance cannot be applied to a function type", pos())
+                type
+            }
+        }
+    }
+
+    /** Parses a declaration such as `T : A` or `Type : A`. */
+    fun typeDef(): LTypeDecl {
+        val variance = parseTypeVariance()
+        val name = ident()
+        val bound = if (peek(TokenType.Colon)) {
+            next()
+            typeRef()
+        } else null
+        return LTypeDecl(name, bound, variance)
+    }
+
+    /** Parses generic declaration parameters such as `<T, U : A>`. */
+    fun typeParameterDecl(): LTypeParameterDecl {
+        val variance = parseTypeVariance()
+        val name = ident()
+        val bound = if (peek(TokenType.Colon)) {
+            next()
+            typeRef()
+        } else null
+        return LTypeParameterDecl(name, bound, variance)
+    }
+
+    fun parseTypeParameters(): List<LTypeParameterDecl> {
+        if (!peek(TokenType.Operator, "<")) return emptyList()
+        expect(TokenType.Operator, "<")
+        val params = mutableListOf<LTypeParameterDecl>()
+        if (peek(TokenType.Operator, ">")) {
+            next()
+            return params
+        }
+
+        while (true) {
+            params.add(typeParameterDecl())
+            when {
+                peek(TokenType.Comma) -> {
+                    next()
+                    if (peek(TokenType.Operator, ">")) {
+                        diag("Trailing comma is not allowed in type parameter list", pos())
+                    }
+                }
+
+                peek(TokenType.Operator, ">") -> {
+                    next()
+                    break
+                }
+
+                else -> diag("Expected ',' or '>' in a type parameter list", pos())
+            }
+        }
+        return params
     }
 
     fun parseBlock(optionalBlock: Boolean = false): LCModule {
@@ -194,10 +350,7 @@ sealed class SubParser(val parent: Parser) {
                 listOf(),
                 LCModule(listOf(), pos),
                 pos).also { next() }
-        val params = if (
-            peek(TokenType.Identifier) &&
-            peek(1).type in Parser.lambdaParamStart
-            ) {
+        val params = if (isLambdaParameterStart()) {
             parseList(
                 null, TokenType.Arrow, TokenType.Comma,
                 ::lambdaParameterDecl
@@ -215,12 +368,25 @@ sealed class SubParser(val parent: Parser) {
 
     fun lambdaParameterDecl(): LCLambdaParameter {
         val pos = pos()
+        val modifier = if (
+            peek(TokenType.Identifier) &&
+            peek().text in setOf("crossinline", "noinline")
+        ) {
+            LParameterModifier.from(next().text)
+        } else null
         val name = ident()
         val type = if (peek(TokenType.Colon)) {
             next()
             typeRef()
         } else null
-        return LCLambdaParameter(null, name, type, null, pos)
+        return LCLambdaParameter(modifier, name, type, null, pos)
+    }
+
+    private fun isLambdaParameterStart(): Boolean {
+        if (!peek(TokenType.Identifier)) return false
+
+        val modifierOffset = if (peek().text in setOf("crossinline", "noinline")) 1 else 0
+        return peek(modifierOffset + 1).type in Parser.lambdaParamStart
     }
 
     fun <T> parseList(

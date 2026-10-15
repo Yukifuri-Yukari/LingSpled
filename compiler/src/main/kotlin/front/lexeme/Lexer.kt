@@ -138,6 +138,8 @@ class Lexer(
                     'r' -> '\r'
                     'n' -> '\n'
                     'b' -> '\b'
+                    '\'' -> '\''
+                    '"' -> '"'
                     else -> {
                         diagnostics.add("Invalid escape sequence", start to cs.position())
                         throw LexemeException("Invalid escape sequence at $start")

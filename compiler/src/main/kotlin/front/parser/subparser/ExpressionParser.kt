@@ -59,6 +59,19 @@ class ExpressionParser(parent: Parser) : SubParser(parent) {
             }
 
             node = when {
+                !crossedNewline && isGenericInvocation() -> {
+                    val typeArgs = parseTypeArguments()
+                    LCExprInvoke(
+                        node,
+                        if (peek(TokenType.LParen)) parseList(
+                            TokenType.LParen, TokenType.RParen,
+                            TokenType.Comma, ::argument
+                        ) else emptyList(),
+                        if (peek(TokenType.LBrace)) parseLambda() else null,
+                        typeArgs,
+                    )
+                }
+
                 !crossedNewline && (peek(TokenType.LParen) || peek(TokenType.LBrace)) -> {
                     if (peek(TokenType.LBrace))
                         LCExprInvoke(node, listOf(), parseLambda())
@@ -107,6 +120,37 @@ class ExpressionParser(parent: Parser) : SubParser(parent) {
             }
         }
         return node
+    }
+
+    /**
+     * Distinguishes call type arguments from the less-than operator without
+     * consuming tokens. The opening '<' must be adjacent to the receiver and
+     * its matching '>' must be followed by a call argument list or lambda.
+     */
+    private fun isGenericInvocation(): Boolean {
+        if (!peekRaw().let { it.type == TokenType.Operator && it.text == "<" }) return false
+
+        val snapshot = parent.ts.snapshot()
+        var depth = 0
+        try {
+            while (hasNext()) {
+                val token = next()
+                when {
+                    token.type == TokenType.Operator && token.text == "<" -> depth++
+                    token.type == TokenType.Operator && token.text == ">" -> {
+                        depth--
+                        if (depth == 0) {
+                            return hasNext() &&
+                                (peek(TokenType.LParen) || peek(TokenType.LBrace))
+                        }
+                    }
+                    token.type == TokenType.NewLine -> return false
+                }
+            }
+            return false
+        } finally {
+            parent.ts.restore(snapshot)
+        }
     }
 
     private fun primary(): LCExpression? {

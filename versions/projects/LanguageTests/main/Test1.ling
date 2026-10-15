@@ -1,11 +1,11 @@
 package language.test
 
-const val a = 0
+/* const val a = 0
 public sealed class A
-class Channel() {}
+class Channel(val qqName: String = "Final_Channel") {}
 
-class B {
-    static final channel = Channel()
+class B<A> : Channel("name"), Interface<A> {
+    static final val channel = Channel()
 
     constructor(a: Any) {}
 
@@ -18,16 +18,17 @@ class B {
     fun a() {}
 
     operator fun add(other: Any): A { return A() }
-}
+} */
 
 public fun main(): Unit {
     //
-    for (i in range(3)) {
+    /* for (i in range(3)) {
         break
         continue
         a++
         val a = a ?: break
         val b = a + a ?: if (a
         + 2 == 1) a else continue
-    }
+    } */
+    println("Hello, \"\"World!")
 }

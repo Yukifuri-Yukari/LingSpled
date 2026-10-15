@@ -25,7 +25,9 @@ class ModuleParser(parent: Parser) : SubParser(parent) {
     fun functionDecl(modifiers: List<Modifier>): LCStatement {
         val pos = keyword("fun").position
         // TODO: Extension Type
+        val typeParamsBeforeName = parseTypeParameters()
         val name = ident()
+        val typeParams = typeParamsBeforeName + parseTypeParameters()
         val params = parseList(
             TokenType.LParen, TokenType.RParen,
             TokenType.Comma, ::parameterDecl
@@ -33,11 +35,31 @@ class ModuleParser(parent: Parser) : SubParser(parent) {
         val returnType = if (peek(TokenType.Colon)) {
             next()
             typeRef()
-        } else LCTypeRef.unit
+        } else LTypeRef.unit
 
-        val body = parseBlock()
+        val body = when {
+            hasNext() && peek(TokenType.LBrace) -> parseBlock()
+            hasNext() && peek(TokenType.Operator, "=") -> {
+                // Expression-bodied functions are represented in the CST as a
+                // normal module containing one synthetic return statement.
+                next()
+                val expression = expr.parse()
+                stmtEnd()
+                LCModule(
+                    stmt = listOf(LCCtrlReturn(expression, expression.position)),
+                    position = expression.position,
+                )
+            }
+            else -> {
+                // Abstract/interface declarations may omit a body. Keep an empty
+                // module so later AST passes can distinguish the declaration from
+                // a malformed block without inventing a nullable function body.
+                stmtEnd(optional = true)
+                LCModule(emptyList(), pos)
+            }
+        }
 
-        return LCFunction(name, params, returnType, body, modifiers, pos)
+        return LCFunction(name, params, returnType, body, modifiers, pos, typeParams)
     }
 
     fun variableDecl(modifiers: List<Modifier>): LCStatement {

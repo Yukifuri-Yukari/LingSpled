@@ -1,14 +1,24 @@
 package yukifuri.lang.lingspled.compiler.front.lexeme.token
 
 import yukifuri.lang.lingspled.compiler.bridge.Position
+import yukifuri.lang.lingspled.compiler.front.lexeme.Lexer
 import yukifuri.lang.lingspled.compiler.front.lexeme.token.TokenType.Companion.whitespaces
 
 class ProcessedTokenStream(list: List<Token>) : TokenStream(list) {
 
+    /**
+     * 判断当前位置之后是否还存在有效 token，尾随 trivia 不算在内。
+     */
+    override fun hasNext(): Boolean {
+        var index = ptr
+        while (index < size && list[index].type in whitespaces) index++
+        return index < size
+    }
+
     override fun peek(): Token {
         val p = ptr
-        while (hasNext() && super.peek().type in whitespaces) ptr++
-        val t = super.peek()
+        while (super.hasNext() && super.peek().type in whitespaces) ptr++
+        val t = if (super.hasNext()) super.peek() else Lexer.eof()
         ptr = p
         return t
     }
@@ -24,7 +34,7 @@ class ProcessedTokenStream(list: List<Token>) : TokenStream(list) {
     }
 
     override fun next(): Token {
-        while (hasNext() && super.peek().type in whitespaces) ptr++
+        while (super.hasNext() && super.peek().type in whitespaces) ptr++
         return super.next()
     }
 

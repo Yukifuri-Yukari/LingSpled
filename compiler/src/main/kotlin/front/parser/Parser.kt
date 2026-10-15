@@ -57,7 +57,16 @@ class Parser(
                 expr.peek(null, "fun") -> module.functionDecl(modifiers)
                 expr.peek().text in setOf("val", "var") -> module.variableDecl(modifiers)
                 expr.peek().text in setOf("class", "interface") -> cls.parse(modifiers)
-                else -> TODO("${expr.peek()}")
+                modifiers.isNotEmpty() ->
+                    expr.throwCE("Modifier exists before illegal top-level target")
+                else -> {
+                    val token = expr.peek()
+                    expr.diag(
+                        "Unexpected top-level token '${token.text}'",
+                        token.position,
+                    )
+                    expr.throwCE()
+                }
             }
 
             builder.add(stmt)
